@@ -8,16 +8,14 @@
 #include "esp_log.h"
 #include <stdbool.h>
 #include "driver/spi_master.h"
-//#include "bme680.h"
-//#include "bme680_types.h"
-#include "esp_camera.h"
+
 
 void initPins();
 void initPeripherals();
+void init_spi_peripheral();
 //void initIMU();
 void initBME680();
-//void initIRTemp();
-//void initCamera();
+uint8_t readbme680_register(uint8_t reg_addr);
 
 // Getter functions for ADC handles and calibration status
 adc_oneshot_unit_handle_t get_adc1_handle(void);
@@ -26,43 +24,43 @@ adc_cali_handle_t get_adc1_cali_handle_chan1(void);
 bool is_adc_cali_enabled_chan0(void);
 bool is_adc_cali_enabled_chan1(void);
 
+//spi_device_handle_t get_spi_imu_handle(void);
+
+#define WHO_AM_I 0x0F
+#define CTRL_REG1 0x20
+#define CTRL_REG4 0x23
 
 
-// Using static const for GPIO definitions provides type safety over #define.
-static const gpio_num_t AmbLight    = GPIO_NUM_1;
-static const gpio_num_t IA_Out      = GPIO_NUM_2;
-static const gpio_num_t SCL         = GPIO_NUM_3;
-static const gpio_num_t SDA         = GPIO_NUM_4;
-static const gpio_num_t MISO_Perip  = GPIO_NUM_5;
-static const gpio_num_t ledCntrlIR  = GPIO_NUM_19;
-static const gpio_num_t SCK_Perip   = GPIO_NUM_21;
-static const gpio_num_t MOSI_Perip  = GPIO_NUM_33;
-static const gpio_num_t SPI_SCK     = GPIO_NUM_35;
-static const gpio_num_t SPI_MOSI    = GPIO_NUM_36;
-static const gpio_num_t SPI_MISOanalogReadResolution    = GPIO_NUM_37;
-static const gpio_num_t SPI_CS      = GPIO_NUM_38;
-static const gpio_num_t ledCntrl    = GPIO_NUM_40;
-static const gpio_num_t Acc_CS      = GPIO_NUM_41;
-static const gpio_num_t AQ_CS       = GPIO_NUM_42;
-static const gpio_num_t Perip_PWR   = GPIO_NUM_45;
+#define AmbLight    1
+#define IA_Out      2
+#define SCL         3
+#define SDA         4
+#define MISO_Perip  5
+#define ledCntrlIR  19
+#define SCK_Perip   21
+#define MOSI_Perip  33
+#define SPI_SCK     35
+#define SPI_MOSI    36
+#define SPI_MISO    37
+#define SPI_CS      38
+#define ledCntrl    40
+#define Acc_CS      41
+#define AQ_CS       42
+#define Perip_PWR   45
 
-// Camera Interface Pins
-static const gpio_num_t CSI_D0      = GPIO_NUM_15;
-static const gpio_num_t CSI_D1      = GPIO_NUM_16;
-static const gpio_num_t CSI_D2      = GPIO_NUM_17;
-static const gpio_num_t CSI_D3      = GPIO_NUM_18;
-static const gpio_num_t CSI_D4      = GPIO_NUM_8;
-static const gpio_num_t CSI_D5      = GPIO_NUM_9;
-static const gpio_num_t CSI_D6      = GPIO_NUM_10;
-static const gpio_num_t CSI_D7      = GPIO_NUM_11;
-static const gpio_num_t CSI_PCLK    = GPIO_NUM_13;
-static const gpio_num_t CSI_MCLK    = GPIO_NUM_14;
-static const gpio_num_t CAM_PWR     = GPIO_NUM_39;
-static const gpio_num_t CSI_VSYNC   = GPIO_NUM_6;
-static const gpio_num_t CSI_HSYNC   = GPIO_NUM_7;
-
-// I2C (Two Wire Interface) Pins
-static const gpio_num_t TWI_SDA     = GPIO_NUM_48;
-static const gpio_num_t TWI_SCK     = GPIO_NUM_47;
-
+#define CSI_D0      15
+#define CSI_D1      16
+#define CSI_D2      17
+#define CSI_D3      18
+#define CSI_D4      8
+#define CSI_D5      9
+#define CSI_D6      10
+#define CSI_D7      11
+#define CSI_PCLK    13
+#define CSI_MCLK    14
+#define CAM_PWR     39
+#define CSI_VSYNC   6
+#define CSI_HSYNC   7
+#define TWI_SDA     48
+#define TWI_SCK     47
 #endif

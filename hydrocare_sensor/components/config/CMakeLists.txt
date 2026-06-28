@@ -7,6 +7,6 @@ idf_component_register(SRCS "config.c"
                         esp_driver_i2c
                         esp_adc
                         # Other components used
-                        esp32-camera
+                        #esp32-camera
                         #bme680
 )
