@@ -1,0 +1,29 @@
+# ----------- ESP-IDF Build & Config Outputs -----------
+**/build/
+**/sdkconfig
+**/sdkconfig.old
+**/sdkconfig.ci
+**/dependencies.lock
+
+# ----------- Python & Local Toolchain Environment -----------
+**/.espressif/
+**/.managed_components/
+**/managed_components/
+pip-wheel-metadata/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ----------- VS Code & Editor Specifics -----------
+**/.vscode/
+# !.vscode/extensions.json
+
+# ----------- Clangd & Static Analysis -----------
+**/.clangd/
+./clangd/
+**/compile_commands.json
+
+# ----------- System & OS Files -----------
+**/.DS_Store
+**/Thumbs.db
