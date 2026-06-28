@@ -4,4 +4,4 @@ dependencies:
   idf:
     version: '>=4.1.0'
   espressif/esp32-camera: '*'
-  esp-idf-lib/bme680: '*'
+

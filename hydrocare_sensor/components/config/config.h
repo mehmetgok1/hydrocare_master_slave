@@ -8,16 +8,16 @@
 #include "esp_log.h"
 #include <stdbool.h>
 #include "driver/spi_master.h"
-#include "bme680.h"
+//#include "bme680.h"
+//#include "bme680_types.h"
 #include "esp_camera.h"
-
 
 void initPins();
 void initPeripherals();
-void initIMU();
-void initBME688();
-void initIRTemp();
-void initCamera();
+//void initIMU();
+void initBME680();
+//void initIRTemp();
+//void initCamera();
 
 // Getter functions for ADC handles and calibration status
 adc_oneshot_unit_handle_t get_adc1_handle(void);
@@ -26,10 +26,6 @@ adc_cali_handle_t get_adc1_cali_handle_chan1(void);
 bool is_adc_cali_enabled_chan0(void);
 bool is_adc_cali_enabled_chan1(void);
 
-// Getter functions for peripheral handles
-spi_device_handle_t get_spi_imu_handle(void);
-spi_device_handle_t get_spi_bme_handle(void);
-struct bme68x_dev *get_bme_dev_handle(void);
 
 
 // Using static const for GPIO definitions provides type safety over #define.
