@@ -33,10 +33,7 @@ static bool     bme680_reset (bme680_sensor_t* dev);
 static bool     bme680_is_available (bme680_sensor_t* dev);
 static void     bme680_delay_ms(uint32_t delay);
 
-static bool     bme680_read_reg  (bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len);
 static bool     bme680_write_reg (bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len);
-static bool     bme680_i2c_read  (bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len);
-static bool     bme680_i2c_write (bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len);
 static bool     bme680_spi_read  (bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len);
 static bool     bme680_spi_write (bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len);
 
@@ -920,8 +917,7 @@ static bool bme680_read_reg(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, ui
 {
     if (!dev || !data) return false;
 
-    return (dev->addr) ? bme680_i2c_read (dev, reg, data, len)
-                       : bme680_spi_read (dev, reg, data, len);
+    return bme680_spi_read (dev, reg, data, len);
 }
 
 
@@ -929,8 +925,7 @@ static bool bme680_write_reg(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, u
 {
     if (!dev || !data) return false;
 
-    return (dev->addr) ? bme680_i2c_write (dev, reg, data, len)
-                       : bme680_spi_write (dev, reg, data, len);
+    return bme680_spi_write (dev, reg, data, len);
 }
 
 #define BME680_SPI_BUF_SIZE 64      // SPI register data buffer size of ESP866
@@ -1006,9 +1001,9 @@ static bool bme680_spi_write(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, u
                    __FUNCTION__, dev, BME680_SPI_BUF_SIZE);
         return false;
     }
-
+   
     // Set memory page first if a non-status register is used
-    if (reg != BME680_REG_STATUS && !bme680_spi_set_mem_page (dev, reg))
+    if (reg != BME680_REG_STATUS && !bme680_spi_set_mem_page(dev, reg))
     {
         error_dev ("Error on write from SPI slave on bus 1. Could not set mem page.",
                    __FUNCTION__, dev);
@@ -1022,10 +1017,18 @@ static bool bme680_spi_write(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, u
     // Use standard memcpy to safely transfer data into transmission buffer
     memcpy(&mosi[1], data, len);
 
-    // Transfer the address byte along with the payload data
-    if (!spi_transfer_pf (dev->bus, dev->cs, mosi, NULL, total_len))
+    // Set up native ESP-IDF SPI transaction
+    spi_transaction_t t;
+    memset(&t, 0, sizeof(t));
+    t.length    = total_len * 8; // Driver expects length in bits
+    t.tx_buffer = mosi;          // Transmit data buffer
+    t.rx_buffer = NULL;          // No data read required for a pure write
+
+    // Transfer using native ESP-IDF polling driver
+    esp_err_t ret = spi_device_polling_transmit(spi_bme_handle, &t);
+    if (ret != ESP_OK)
     {
-        error_dev ("Could not write data to SPI.", __FUNCTION__, dev);
+        error_dev ("Could not write data to SPI. Native error code: 0x%x", __FUNCTION__, dev, ret);
         dev->error_code |= BME680_SPI_WRITE_FAILED;
         return false;
     }

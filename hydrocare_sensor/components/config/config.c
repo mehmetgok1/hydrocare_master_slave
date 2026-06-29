@@ -132,7 +132,7 @@ void initBME680()
         .queue_size = 1,
     };
     ESP_ERROR_CHECK(spi_bus_add_device(SPI3_HOST, &devcfg, &spi_bme_handle));
-    //bme680_sensor=bme680_init_sensor(1,  0, uint8_t AQ_CS);
+    bme680_sensor=bme680_init_sensor(1,  0, uint8_t AQ_CS);
 }
 
 adc_oneshot_unit_handle_t get_adc1_handle(void)
