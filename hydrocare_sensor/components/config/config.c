@@ -106,8 +106,7 @@ void initPeripherals()
     bme680_read_reg(bme680_sensor, BME680_REG_ID, &chip_id, 1);
     ESP_LOGI(TAG, "BME680 Chip ID: 0x%02X", chip_id);
 
-    bme680_set_oversampling_rates(bme680_sensor, osr_4x, osr_none, osr_2x);
-
+    bme680_set_oversampling_rates(bme680_sensor, osr_4x, osr_2x, osr_2x);
     // Change the IIR filter size for temperature and pressure to 7.
     bme680_set_filter_size(bme680_sensor, iir_size_7);
     // Change the heater profile 0 to 200 degree Celcius for 100 ms.
@@ -122,8 +121,6 @@ void initPeripherals()
         // passive waiting until measurement results are available
         vTaskDelay (duration);
         // alternatively: busy waiting until measurement results are available
-        while (bme680_is_measuring (bme680_sensor)) ;
-        // get the results and do something with them
         if (bme680_get_results_float (bme680_sensor, &results))
             ESP_LOGI(TAG, "BME680 Sensor: %.2f °C, %.2f %%, %.2f hPa, %.2f Ohm",
                 results.temperature, 
@@ -134,7 +131,9 @@ void initPeripherals()
             ESP_LOGW(TAG, "Could not capture valid measurements. Error: 0x%04X", bme680_sensor->error_code);
         }
     }
-    
+    ESP_LOGI(TAG, "BME680 calib_data.part1: 0x%02X", bme680_sensor->calib_data.par_t1);
+    ESP_LOGI(TAG, "BME680 calib_data.part2: 0x%02X", bme680_sensor->calib_data.par_t2);
+    ESP_LOGI(TAG, "BME680 calib_data.part3: 0x%02X", bme680_sensor->calib_data.par_t3);
     //initIRTemp();
     //initCamera();
 
@@ -165,7 +164,7 @@ void initBME680()
     spi_device_interface_config_t devcfg = {
         .command_bits = 0,
         .clock_speed_hz = 1 * 1000 * 1000, // 1 MHz
-        .mode = 0, // BME680 uses SPI mode 3 (CPOL=1, CPHA=1)
+        .mode = 3, // BME680 uses SPI mode 3 (CPOL=1, CPHA=1)
         .spics_io_num = AQ_CS,
         .queue_size = 1,
     };
@@ -208,4 +207,3 @@ adc_cali_handle_t get_adc1_cali_handle_chan1(void)
 {
     return adc1_cali_handle_chan1;
 }
-

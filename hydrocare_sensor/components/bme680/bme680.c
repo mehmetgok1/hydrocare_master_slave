@@ -2,7 +2,7 @@
 #include <string.h> // Required for memcpy
 #include <stdlib.h> // Required for malloc
 
-static spi_device_handle_t spi_bme_handle;
+spi_device_handle_t spi_bme_handle2;
 
 typedef struct {
 
@@ -68,7 +68,7 @@ bme680_sensor_t* bme680_init_sensor(uint8_t bus, uint8_t addr, uint8_t cs, spi_d
     memset(dev->settings.heater_temperature, 0, sizeof(uint16_t)*10);
     memset(dev->settings.heater_duration, 0, sizeof(uint16_t)*10);
 
-    spi_bme_handle=*handle_in;
+    spi_bme_handle2=*handle_in;
     // reset the sensor
     if (!bme680_reset(dev))
     {
@@ -942,14 +942,13 @@ static bool bme680_spi_read(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, ui
 {
     if (len == 0 || data == NULL || dev == NULL) return false;
 
-    // --- FIX: Set memory page first if a non-status register is read ---
     if (reg != BME680_REG_STATUS && !bme680_spi_set_mem_page(dev, reg))
     {
         error_dev ("Error on read from SPI slave on bus 1. Could not set mem page.",
                    __FUNCTION__, dev);
         return false;
     }
-
+    esp_rom_delay_us(300);
     esp_err_t ret;
     uint32_t total_len = 1 + len; // 1 byte address + N bytes data
 
@@ -982,7 +981,7 @@ static bool bme680_spi_read(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, ui
     t.rx_buffer = rx_buf;           // Directly pass the allocated pointer address
 
     // Perform the polling transmission
-    ret = spi_device_polling_transmit(spi_bme_handle, &t);
+    ret = spi_device_polling_transmit(spi_bme_handle2, &t);
     if (ret != ESP_OK) {
         free(tx_buf);
         free(rx_buf);
@@ -991,6 +990,10 @@ static bool bme680_spi_read(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, ui
 
     // Copy the received data (skipping the command index tracking dummy byte)
     memcpy(data, rx_buf + 1, len);
+    //for (int i = 0; i < 2; i++) {
+    //    ESP_LOGI(TAG, "SPI read: reg=0x%02X, len=%d, data=", reg, len);
+    //    ESP_LOGI(TAG, " 0x%02X", rx_buf[i + 1]);
+    //}
     free(tx_buf);
     free(rx_buf);
 
@@ -1002,7 +1005,7 @@ static bool bme680_spi_write(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, u
 
     static uint8_t mosi[BME680_SPI_BUF_SIZE];
     uint32_t total_len = 1 + len; // 1 byte address + N bytes data
-
+    esp_rom_delay_us(300);
     // Check boundary safety: total packet length cannot exceed buffer size
     if (total_len > BME680_SPI_BUF_SIZE)
     {
@@ -1036,7 +1039,7 @@ static bool bme680_spi_write(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, u
     t.rx_buffer = NULL;          // No data read required for a pure write
 
     // Transfer using native ESP-IDF polling driver
-    esp_err_t ret = spi_device_polling_transmit(spi_bme_handle, &t);
+    esp_err_t ret = spi_device_polling_transmit(spi_bme_handle2, &t);
     if (ret != ESP_OK)
     {
         error_dev ("Could not write data to SPI. Native error code: 0x%x", __FUNCTION__, dev, ret);
