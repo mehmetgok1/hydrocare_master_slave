@@ -361,6 +361,7 @@ bool bme680_measure_fixed (bme680_sensor_t* dev, bme680_values_fixed_t* results)
 
 bool bme680_measure_float (bme680_sensor_t* dev, bme680_values_float_t* results)
 {
+    
     int32_t duration = bme680_force_measurement (dev);
 
     if (duration == BME680_NOK)
