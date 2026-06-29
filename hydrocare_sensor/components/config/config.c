@@ -106,34 +106,24 @@ void initPeripherals()
     bme680_read_reg(bme680_sensor, BME680_REG_ID, &chip_id, 1);
     ESP_LOGI(TAG, "BME680 Chip ID: 0x%02X", chip_id);
 
-    bme680_set_oversampling_rates(bme680_sensor, osr_4x, osr_2x, osr_2x);
-    // Change the IIR filter size for temperature and pressure to 7.
-    bme680_set_filter_size(bme680_sensor, iir_size_7);
-    // Change the heater profile 0 to 200 degree Celcius for 100 ms.
-    bme680_set_heater_profile (bme680_sensor, 0, 200, 100);
-    bme680_use_heater_profile (bme680_sensor, 0);
-    // Set ambient temperature to 10 degree Celsius
-    // as long as sensor configuration isn't changed, duration is constant
+    while (1) {
     uint32_t duration = bme680_get_measurement_duration(bme680_sensor);
-    // trigger the sensor to start one TPHG measurement cycle
-    if (bme680_force_measurement (bme680_sensor))
-    {
-        // passive waiting until measurement results are available
-        vTaskDelay (duration);
-        // alternatively: busy waiting until measurement results are available
-        if (bme680_get_results_float (bme680_sensor, &results))
+    
+    if (bme680_force_measurement(bme680_sensor)) {
+        vTaskDelay(duration);
+        
+        if (bme680_get_results_float(bme680_sensor, &results)) {
             ESP_LOGI(TAG, "BME680 Sensor: %.2f °C, %.2f %%, %.2f hPa, %.2f Ohm",
                 results.temperature, 
                 results.humidity, 
                 results.pressure, 
                 results.gas_resistance);
-        else{
-            ESP_LOGW(TAG, "Could not capture valid measurements. Error: 0x%04X", bme680_sensor->error_code);
         }
     }
-    ESP_LOGI(TAG, "BME680 calib_data.part1: 0x%02X", bme680_sensor->calib_data.par_t1);
-    ESP_LOGI(TAG, "BME680 calib_data.part2: 0x%02X", bme680_sensor->calib_data.par_t2);
-    ESP_LOGI(TAG, "BME680 calib_data.part3: 0x%02X", bme680_sensor->calib_data.par_t3);
+    
+    // Wait a couple of seconds before the next reading
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    }
     //initIRTemp();
     //initCamera();
 
@@ -170,6 +160,12 @@ void initBME680()
     };
     ESP_ERROR_CHECK(spi_bus_add_device(SPI3_HOST, &devcfg, &spi_bme_handle));
     bme680_sensor=bme680_init_sensor(1,  0, AQ_CS,&spi_bme_handle);
+    bme680_set_oversampling_rates(bme680_sensor, osr_4x, osr_2x, osr_2x);
+    // Change the IIR filter size for temperature and pressure to 7.
+    bme680_set_filter_size(bme680_sensor, iir_size_7);
+    // Change the heater profile 0 to 200 degree Celcius for 100 ms.
+    bme680_set_heater_profile(bme680_sensor, 0, 320, 150);
+    bme680_use_heater_profile (bme680_sensor, 0);
 }
 uint8_t readbme680_register(uint8_t reg_addr)
 {
