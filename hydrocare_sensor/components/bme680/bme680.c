@@ -25,7 +25,7 @@ static int16_t  bme680_convert_temperature (bme680_sensor_t *dev, uint32_t raw_t
 static uint32_t bme680_convert_pressure (bme680_sensor_t *dev, uint32_t raw_pressure);
 static uint32_t bme680_convert_humidity (bme680_sensor_t *dev, uint16_t raw_humidity);
 static uint32_t bme680_convert_gas (bme680_sensor_t *dev, uint16_t raw_gas, uint8_t gas_range);
-static bool     bme680_spi_set_mem_page (bme680_sensor_t* dev, uint8_t reg)
+static bool     bme680_spi_set_mem_page (bme680_sensor_t* dev, uint8_t reg);
 
 static uint8_t  bme680_heater_resistance (const bme680_sensor_t* dev, uint16_t temperature);
 static uint8_t  bme680_heater_duration (uint16_t duration);
@@ -166,22 +166,7 @@ bme680_sensor_t* bme680_init_sensor(uint8_t bus, uint8_t addr, uint8_t cs, spi_d
     return dev;
 }
 
-static bool bme680_spi_set_mem_page (bme680_sensor_t* dev, uint8_t reg)
-{
-    // mem pages (reg 0x00 .. 0x7f = 1, reg 0x80 ... 0xff = 0
-    uint8_t mem_page = (reg < 0x80) ? BME680_BIT_SWITCH_MEM_PAGE_1
-                                    : BME680_BIT_SWITCH_MEM_PAGE_0;
 
-    debug_dev ("Set mem page for register %02x to %d.", __FUNCTION__, dev, reg, mem_page);
-
-    if (!bme680_spi_write (dev, BME680_REG_SWITCH_MEM_PAGE, &mem_page, 1))
-    {
-        dev->error_code |= BME680_SPI_SET_PAGE_FAILED;
-        return false;
-    }
-    // sdk_os_delay_us (100);
-    return true;
-}
 
 bool bme680_force_measurement (bme680_sensor_t* dev)
 {
@@ -922,12 +907,9 @@ static uint8_t bme680_heater_resistance (const bme680_sensor_t *dev, uint16_t te
 
 static void bme680_delay_ms(uint32_t period)
 {
-    uint32_t start_time = sdk_system_get_time () / 1000;
-
-    vTaskDelay((period + portTICK_PERIOD_MS-1) / portTICK_PERIOD_MS);
-
-    while (sdk_system_get_time()/1000 - start_time < period)
-        vTaskDelay (1);
+    if (period == 0) return;
+    // Smoothly yields the CPU to other tasks for the exact millisecond duration
+    vTaskDelay(pdMS_TO_TICKS(period));
 }
 
 
@@ -1051,5 +1033,22 @@ static bool bme680_spi_write(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, u
         return false;
     }
 
+    return true;
+}
+
+static bool bme680_spi_set_mem_page (bme680_sensor_t* dev, uint8_t reg)
+{
+    // mem pages (reg 0x00 .. 0x7f = 1, reg 0x80 ... 0xff = 0
+    uint8_t mem_page = (reg < 0x80) ? BME680_BIT_SWITCH_MEM_PAGE_1
+                                    : BME680_BIT_SWITCH_MEM_PAGE_0;
+
+    debug_dev ("Set mem page for register %02x to %d.", __FUNCTION__, dev, reg, mem_page);
+
+    if (!bme680_spi_write (dev, BME680_REG_SWITCH_MEM_PAGE, &mem_page, 1))
+    {
+        dev->error_code |= BME680_SPI_SET_PAGE_FAILED;
+        return false;
+    }
+    // sdk_os_delay_us (100);
     return true;
 }
