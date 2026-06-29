@@ -51,7 +51,7 @@
 extern "C"
 {
 #endif
-bme680_sensor_t* bme680_init_sensor (uint8_t bus, uint8_t addr, uint8_t cs,spi_device_handle_t* spi_bme_handle);
+bme680_sensor_t* bme680_init_sensor (uint8_t bus, uint8_t addr, uint8_t cs,spi_device_handle_t* handle_in);
 bool bme680_read_reg  (bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len);
 bool bme680_force_measurement (bme680_sensor_t* dev);
 uint32_t bme680_get_measurement_duration (const bme680_sensor_t *dev);

@@ -40,7 +40,7 @@ static bool     bme680_spi_write (bme680_sensor_t* dev, uint8_t reg, uint8_t *da
 #define lsb_msb_to_type(t,b,o) (t)(((t)b[o+1] << 8) | b[o])
 #define lsb_to_type(t,b,o)     (t)(b[o])
 
-bme680_sensor_t* bme680_init_sensor(uint8_t bus, uint8_t addr, uint8_t cs, spi_device_handle_t* spi_bme_handle)
+bme680_sensor_t* bme680_init_sensor(uint8_t bus, uint8_t addr, uint8_t cs, spi_device_handle_t* handle_in)
 
 {
     bme680_sensor_t* dev;
@@ -62,7 +62,7 @@ bme680_sensor_t* bme680_init_sensor(uint8_t bus, uint8_t addr, uint8_t cs, spi_d
     memset(dev->settings.heater_temperature, 0, sizeof(uint16_t)*10);
     memset(dev->settings.heater_duration, 0, sizeof(uint16_t)*10);
 
-    spi_bme_handle=spi_bme_handle;
+    spi_bme_handle=*handle_in;
 
     // reset the sensor
     if (!bme680_reset(dev))
