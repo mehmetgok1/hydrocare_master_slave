@@ -1,4 +1,3 @@
-
 #ifndef __BME680_H__
 #define __BME680_H__
 
@@ -6,12 +5,13 @@
 // #define BME680_DEBUG_LEVEL_1    // only error messages
 // #define BME680_DEBUG_LEVEL_2    // debug and error messages
 
-#include <string.h>
-#include <stdlib.h>
 #include "driver/spi_master.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include <string.h>
+#include <stdlib.h>
+
 #include "bme680_types.h"
 
 // BME680 addresses

@@ -1,4 +1,6 @@
 #include "bme680.h"
+#include <string.h> // Required for memcpy
+#include <stdlib.h> // Required for malloc
 
 static spi_device_handle_t spi_bme_handle;
 
@@ -913,7 +915,7 @@ static void bme680_delay_ms(uint32_t period)
 }
 
 
-static bool bme680_read_reg(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
+bool bme680_read_reg(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
 {
     if (!dev || !data) return false;
 
@@ -937,18 +939,20 @@ static bool bme680_write_reg(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, u
 
 static bool bme680_spi_read(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
 {
-    if (len == 0 || data == NULL) return false;
+    if (len == 0 || data == NULL || dev == NULL) return false;
 
     esp_err_t ret;
     uint32_t total_len = 1 + len; // 1 byte address + N bytes data
-    if (total_len >= BME680_SPI_BUF_SIZE)
+
+    // Fix: Strict boundary assessment
+    if (total_len > BME680_SPI_BUF_SIZE)
     {
         dev->error_code |= BME680_SPI_BUFFER_OVERFLOW;
-        error_dev ("Error on write to SPI slave on bus 1. Tried to transfer more"
-                   "than %d byte in one write operation.", __FUNCTION__, dev, BME680_SPI_BUF_SIZE);
-
+        error_dev ("Error on read from SPI slave on bus 1. Tried to transfer more "
+                   "than %d bytes in one read operation.", __FUNCTION__, dev, BME680_SPI_BUF_SIZE);
         return false;
     }
+
     uint8_t *tx_buf = malloc(total_len);
     uint8_t *rx_buf = malloc(total_len);
 
@@ -962,11 +966,11 @@ static bool bme680_spi_read(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, ui
     memset(tx_buf, 0, total_len);
     tx_buf[0] = reg | 0x80;
 
-    spi_transaction_t t = {
-        .length = total_len * 8, // Total bits to transmit/receive
-        .tx_buffer = tx_buf,
-        .rx_buffer = rx_buf
-    };
+    spi_transaction_t t;
+    memset(&t, 0, sizeof(t));      // Ensure the transaction struct has no garbage values
+    t.length = total_len * 8;       // Total bits to transmit/receive
+    t.tx_buffer = tx_buf;           // Directly pass the allocated pointer address
+    t.rx_buffer = rx_buf;           // Directly pass the allocated pointer address
 
     // Perform the polling transmission
     ret = spi_device_polling_transmit(spi_bme_handle, &t);
@@ -976,15 +980,13 @@ static bool bme680_spi_read(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, ui
         return false;
     }
 
-    // Copy the received data (skipping the first dummy byte corresponding to the command phase)
-    memcpy(data, &rx_buf[1], len);
-
+    // Copy the received data (skipping the command index tracking dummy byte)
+    memcpy(data, rx_buf + 1, len);
     free(tx_buf);
     free(rx_buf);
 
     return true; 
 }
-
 static bool bme680_spi_write(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
 {
     if (!dev || !data || len == 0) return false;
@@ -1015,7 +1017,7 @@ static bool bme680_spi_write(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, u
     mosi[0] = reg;
 
     // Use standard memcpy to safely transfer data into transmission buffer
-    memcpy(&mosi[1], data, len);
+    memcpy(mosi + 1, data, len);
 
     // Set up native ESP-IDF SPI transaction
     spi_transaction_t t;

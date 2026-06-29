@@ -7,6 +7,8 @@ static adc_cali_handle_t adc1_cali_handle_chan0 = NULL;
 static adc_cali_handle_t adc1_cali_handle_chan1 = NULL;
 static bool adc_cali_enabled_chan0 = false;
 static bool adc_cali_enabled_chan1 = false;
+uint8_t readbme680_register(uint8_t reg_addr);
+
 // Peripheral handles are now static to this file
 static spi_device_handle_t spi_bme_handle;
 bme680_sensor_t* bme680_sensor;
@@ -109,14 +111,10 @@ void init_spi_peripheral()
 {
     // Initialize the SPI bus for peripherals
     spi_bus_config_t buscfg = {
-        .mosi_io_num = MOSI_Perip,
-        .miso_io_num = MISO_Perip,
-        .sclk_io_num = SCK_Perip,
-        .quadwp_io_num = -1,
-        .quadhd_io_num = -1,
-        .max_transfer_sz = 64,
-    };
-    ESP_ERROR_CHECK(spi_bus_initialize(SPI3_HOST, &buscfg, SPI_DMA_CH_AUTO));
+         .quadhd_io_num = -1,
+         .max_transfer_sz = 64,
+     };
+    ESP_ERROR_CHECK(spi_bus_initialize(SPI2_HOST, &buscfg, SPI_DMA_CH_AUTO));
 }
 
 void initBME680()
@@ -125,17 +123,41 @@ void initBME680()
     spi_device_interface_config_t devcfg = {
         .command_bits = 0,
         .clock_speed_hz = 10 * 1000 * 1000, // 10 MHz
-        .mode = 3, // BME680 uses SPI mode 3 (CPOL=1, CPHA=1)
+        .mode = 0, // BME680 uses SPI mode 3 (CPOL=1, CPHA=1)
         .spics_io_num = AQ_CS,
         .queue_size = 1,
     };
-    ESP_ERROR_CHECK(spi_bus_add_device(SPI3_HOST, &devcfg, &spi_bme_handle));
+    ESP_ERROR_CHECK(spi_bus_add_device(SPI2_HOST, &devcfg, &spi_bme_handle));
     bme680_sensor=bme680_init_sensor(1,  0, AQ_CS,&spi_bme_handle);
     // Example: read the BME680 Chip ID register (should be 0x61)
     uint8_t chip_id = 0;
-    bme680_read_reg(bme680_sensor, 0x61, &chip_id, 1);
-    //0xD0);
+    bme680_read_reg(bme680_sensor, 0xD0, &chip_id, 1);
     ESP_LOGI(TAG, "BME680 Chip ID: 0x%02X", chip_id);
+    uint8_t chip_id2 ;
+    chip_id2 = readbme680_register(0xD0);
+    ESP_LOGI(TAG, "BME680 Chip ID: 0x%02X", chip_id2);
+}
+uint8_t readbme680_register(uint8_t reg_addr)
+{
+    esp_err_t ret;
+    uint8_t tx_data[2];
+    uint8_t rx_data[2];
+
+    // For BME680 SPI read, the MSB of the register address must be 1.
+    tx_data[0] = reg_addr | 0x80;
+    tx_data[1] = 0x00; // Dummy byte to clock out the data
+
+    spi_transaction_t t = {
+        .length = 16, // 2 bytes * 8 bits
+        .tx_buffer = &tx_data,
+        .rx_buffer = &rx_data
+    };
+
+    ret = spi_device_polling_transmit(spi_bme_handle, &t);
+    ESP_ERROR_CHECK(ret);
+
+    // The actual data is in the second byte received.
+    return rx_data[1];
 }
 
 adc_oneshot_unit_handle_t get_adc1_handle(void)
