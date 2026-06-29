@@ -47,30 +47,18 @@
  * implication or otherwise under any patent or patent rights of the copyright
  * holder.
  */
-#ifndef portTICK_PERIOD_MS
-#define portTICK_PERIOD_MS (1000 / configTICK_RATE_HZ)
-#endif
+
 
 #include <string.h>
 #include <stdlib.h>
 #include "driver/spi_master.h"
 #include "bme680.h"
 
-#if defined(BME680_DEBUG_LEVEL_2)
-#define debug(s, f, ...) printf("%s %s: " s "\n", "BME680", f, ## __VA_ARGS__)
-#define debug_dev(s, f, d, ...) printf("%s %s: bus %d, addr %02x - " s "\n", "BME680", f, d->bus, d->addr, ## __VA_ARGS__)
-#else
 #define debug(s, f, ...)
 #define debug_dev(s, f, d, ...)
-#endif
 
-#if defined(BME680_DEBUG_LEVEL_1) || defined(BME680_DEBUG_LEVEL_2)
-#define error(s, f, ...) printf("%s %s: " s "\n", "BME680", f, ## __VA_ARGS__)
-#define error_dev(s, f, d, ...) printf("%s %s: bus %d, addr %02x - " s "\n", "BME680", f, d->bus, d->addr, ## __VA_ARGS__)
-#else
 #define error(s, f, ...)
 #define error_dev(s, f, d, ...)
-#endif
 
 // modes: unfortunatly, only SLEEP_MODE and FORCED_MODE are documented
 #define BME680_SLEEP_MODE           0x00    // low power sleeping

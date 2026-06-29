@@ -8,6 +8,7 @@
 #include "esp_log.h"
 #include <stdbool.h>
 #include "driver/spi_master.h"
+#include "bme680.h"
 
 
 void initPins();
