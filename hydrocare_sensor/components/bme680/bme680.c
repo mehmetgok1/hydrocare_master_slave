@@ -43,6 +43,9 @@ static bool     bme680_spi_write (bme680_sensor_t* dev, uint8_t reg, uint8_t *da
 #define lsb_msb_to_type(t,b,o) (t)(((t)b[o+1] << 8) | b[o])
 #define lsb_to_type(t,b,o)     (t)(b[o])
 
+static const char *TAG = "bme680";
+
+
 bme680_sensor_t* bme680_init_sensor(uint8_t bus, uint8_t addr, uint8_t cs, spi_device_handle_t* handle_in)
 
 {
@@ -66,7 +69,6 @@ bme680_sensor_t* bme680_init_sensor(uint8_t bus, uint8_t addr, uint8_t cs, spi_d
     memset(dev->settings.heater_duration, 0, sizeof(uint16_t)*10);
 
     spi_bme_handle=*handle_in;
-
     // reset the sensor
     if (!bme680_reset(dev))
     {
@@ -74,7 +76,6 @@ bme680_sensor_t* bme680_init_sensor(uint8_t bus, uint8_t addr, uint8_t cs, spi_d
         free (dev);
         return NULL;
     }
-
     // check availability of the sensor
     if (!bme680_is_available (dev))
     {
@@ -82,7 +83,6 @@ bme680_sensor_t* bme680_init_sensor(uint8_t bus, uint8_t addr, uint8_t cs, spi_d
         free (dev);
         return NULL;
     }
-
     uint8_t buf[BME680_CDM_SIZE];
 
     // read all calibration parameters from sensor
@@ -157,13 +157,13 @@ bme680_sensor_t* bme680_init_sensor(uint8_t bus, uint8_t addr, uint8_t cs, spi_d
         free (dev);
         return NULL;
     }
-
     if (!bme680_use_heater_profile (dev, 0))
     {
         error_dev ("Could not configure default heater profile.", __FUNCTION__, dev);
         free (dev);
         return NULL;
     }
+
 
     return dev;
 }
@@ -936,10 +936,18 @@ static bool bme680_write_reg(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, u
 #define BME680_BIT_SWITCH_MEM_PAGE_0   0x00
 #define BME680_BIT_SWITCH_MEM_PAGE_1   0x10
 
-
+//static
 static bool bme680_spi_read(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
 {
     if (len == 0 || data == NULL || dev == NULL) return false;
+
+    // --- FIX: Set memory page first if a non-status register is read ---
+    if (reg != BME680_REG_STATUS && !bme680_spi_set_mem_page(dev, reg))
+    {
+        error_dev ("Error on read from SPI slave on bus 1. Could not set mem page.",
+                   __FUNCTION__, dev);
+        return false;
+    }
 
     esp_err_t ret;
     uint32_t total_len = 1 + len; // 1 byte address + N bytes data
