@@ -17,7 +17,6 @@ void initPeripherals();
 void init_spi_peripheral();
 //void initIMU();
 void initBME680();
-uint8_t readbme680_register(uint8_t reg_addr);
 
 // Getter functions for ADC handles and calibration status
 adc_oneshot_unit_handle_t get_adc1_handle(void);

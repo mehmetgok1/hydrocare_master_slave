@@ -94,9 +94,7 @@ void initPeripherals()
   // ===== Initialize Other Peripherals =====
   init_spi_peripheral(); // Initialize SPI for peripherals like BME680
   initBME680();
-  // Example: read the BME680 Chip ID register (should be 0x61)
-  uint8_t chip_id = readbme680_register(0xD0);
-  ESP_LOGI(TAG, "BME680 Chip ID: 0x%02X", chip_id);
+
   //initIRTemp();
   //initCamera();
 
@@ -132,7 +130,12 @@ void initBME680()
         .queue_size = 1,
     };
     ESP_ERROR_CHECK(spi_bus_add_device(SPI3_HOST, &devcfg, &spi_bme_handle));
-    bme680_sensor=bme680_init_sensor(1,  0, uint8_t AQ_CS);
+    bme680_sensor=bme680_init_sensor(1,  0, AQ_CS,&spi_bme_handle);
+    // Example: read the BME680 Chip ID register (should be 0x61)
+    uint8_t chip_id = 0;
+    bme680_read_reg(bme680_sensor, 0x61, &chip_id, 1);
+    //0xD0);
+    ESP_LOGI(TAG, "BME680 Chip ID: 0x%02X", chip_id);
 }
 
 adc_oneshot_unit_handle_t get_adc1_handle(void)
