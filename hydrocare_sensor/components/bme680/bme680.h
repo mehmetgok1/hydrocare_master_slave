@@ -9,6 +9,7 @@
 #include <string.h>
 #include <stdlib.h>
 #include "driver/spi_master.h"
+#include "esp_timer.h"
 #include "bme680_types.h"
 
 // BME680 addresses
