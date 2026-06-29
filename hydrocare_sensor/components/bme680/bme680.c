@@ -1,57 +1,3 @@
-/*
- * Driver for Bosch Sensortec BME680 digital temperature, humidity, pressure
- * and gas sensor connected to I2C or SPI
- *
- * This driver is for the usage with the ESP8266 and FreeRTOS (esp-open-rtos)
- * [https://github.com/SuperHouse/esp-open-rtos]. It is also working with ESP32
- * and ESP-IDF [https://github.com/espressif/esp-idf.git] as well as Linux
- * based systems using a wrapper library for ESP8266 functions.
- *
- * ---------------------------------------------------------------------------
- *
- * The BSD License (3-clause license)
- *
- * Copyright (c) 2017 Gunar Schorcht (https://github.com/gschorcht)
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * 3. Neither the name of the copyright holder nor the names of its
- * contributors may be used to endorse or promote products derived from this
- * software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * The information provided is believed to be accurate and reliable. The
- * copyright holder assumes no responsibility for the consequences of use
- * of such information nor for any infringement of patents or other rights
- * of third parties which may result from its use. No license is granted by
- * implication or otherwise under any patent or patent rights of the copyright
- * holder.
- */
-
-
-#include <string.h>
-#include <stdlib.h>
-#include "driver/spi_master.h"
 #include "bme680.h"
 
 #define debug(s, f, ...)
@@ -216,6 +162,7 @@
 #define BME680_CDM_RHV  41      // 0x00 - res_heat_val
 #define BME680_CDM_RHR  43      // 0x02 - res_heat_range
 #define BME680_CDM_RSWE 45      // 0x04 - range_sw_error
+static spi_device_handle_t spi_bme_handle;
 
 
 /**
@@ -265,7 +212,7 @@ static bool     bme680_spi_write (bme680_sensor_t* dev, uint8_t reg, uint8_t *da
 #define lsb_msb_to_type(t,b,o) (t)(((t)b[o+1] << 8) | b[o])
 #define lsb_to_type(t,b,o)     (t)(b[o])
 
-bme680_sensor_t* bme680_init_sensor(uint8_t bus, uint8_t addr, uint8_t cs)
+bme680_sensor_t* bme680_init_sensor(uint8_t bus, uint8_t addr, uint8_t cs, spi_device_handle_t* spi_bme_handle)
 
 {
     bme680_sensor_t* dev;
@@ -288,6 +235,8 @@ bme680_sensor_t* bme680_init_sensor(uint8_t bus, uint8_t addr, uint8_t cs)
     memset(dev->settings.heater_temperature, 0, sizeof(uint16_t)*10);
     memset(dev->settings.heater_duration, 0, sizeof(uint16_t)*10);
 
+
+    
     // if addr==0 then SPI is used and has to be initialized
     if (!addr && !spi_device_init (bus, cs))
     {
@@ -1236,84 +1185,14 @@ static bool bme680_write_reg(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, u
 #define BME680_BIT_SWITCH_MEM_PAGE_0   0x00
 #define BME680_BIT_SWITCH_MEM_PAGE_1   0x10
 
-static bool bme680_spi_set_mem_page (bme680_sensor_t* dev, uint8_t reg)
-{
-    // mem pages (reg 0x00 .. 0x7f = 1, reg 0x80 ... 0xff = 0
-    uint8_t mem_page = (reg < 0x80) ? BME680_BIT_SWITCH_MEM_PAGE_1
-                                    : BME680_BIT_SWITCH_MEM_PAGE_0;
-
-    debug_dev ("Set mem page for register %02x to %d.", __FUNCTION__, dev, reg, mem_page);
-
-    if (!bme680_spi_write (dev, BME680_REG_SWITCH_MEM_PAGE, &mem_page, 1))
-    {
-        dev->error_code |= BME680_SPI_SET_PAGE_FAILED;
-        return false;
-    }
-    // sdk_os_delay_us (100);
-    return true;
-}
 
 static bool bme680_spi_read(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
 {
-    if (!dev || !data) return false;
-    
-    if (len >= BME680_SPI_BUF_SIZE)
-    {
-        dev->error_code |= BME680_SPI_BUFFER_OVERFLOW;
-        error_dev ("Error on read from SPI slave on bus 1. Tried to transfer "
-                   "more than %d byte in one read operation.",
-                   __FUNCTION__, dev, BME680_SPI_BUF_SIZE);
-        return false;
-    }
+    if (len == 0 || data == NULL) return false;
 
-    // set mem page first
-    if (!bme680_spi_set_mem_page (dev, reg))
-    {
-        error_dev ("Error on read from SPI slave on bus 1. Could not set mem page.",
-                   __FUNCTION__, dev);
-        return false;
-    }
-
-    reg &= 0x7f;
-    reg |= 0x80;
-
-    static uint8_t mosi[BME680_SPI_BUF_SIZE];
-    static uint8_t miso[BME680_SPI_BUF_SIZE];
-
-    memset (mosi, 0xff, BME680_SPI_BUF_SIZE);
-    memset (miso, 0xff, BME680_SPI_BUF_SIZE);
-
-    mosi[0] = reg;
-    
-    if (!spi_transfer_pf (dev->bus, dev->cs, mosi, miso, len+1))
-    {
-        error_dev ("Could not read data from SPI", __FUNCTION__, dev);
-        dev->error_code |= BME680_SPI_READ_FAILED;
-        return false;
-    }
-    // shift data one by left, first byte received while sending register address is invalid
-    for (int i=0; i < len; i++)
-      data[i] = miso[i+1];
-
-    #ifdef BME680_DEBUG_LEVEL_2
-    printf("BME680 %s: read the following bytes: ", __FUNCTION__);
-    printf("%0x ", reg);
-    for (int i=0; i < len; i++)
-        printf("%0x ", data[i]);
-    printf("\n");
-    #endif
-
-    return true;
-}
-
-
-static bool bme680_spi_write(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
-{
-    if (!dev || !data) return false;
-
-    static uint8_t mosi[BME680_SPI_BUF_SIZE];
-
-    if (len >= BME680_SPI_BUF_SIZE)
+    esp_err_t ret;
+    uint32_t total_len = 1 + len; // 1 byte address + N bytes data
+    if (total_len >= BME680_SPI_BUF_SIZE)
     {
         dev->error_code |= BME680_SPI_BUFFER_OVERFLOW;
         error_dev ("Error on write to SPI slave on bus 1. Tried to transfer more"
@@ -1321,8 +1200,60 @@ static bool bme680_spi_write(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, u
 
         return false;
     }
+    uint8_t *tx_buf = malloc(total_len);
+    uint8_t *rx_buf = malloc(total_len);
 
-    // set mem page first if not mem page register is used
+    if (tx_buf == NULL || rx_buf == NULL) {
+        free(tx_buf);
+        free(rx_buf);
+        return false;
+    }
+
+    // Clear tx_buf and set the first byte to the register address with read flag (MSB = 1)
+    memset(tx_buf, 0, total_len);
+    tx_buf[0] = reg | 0x80;
+
+    spi_transaction_t t = {
+        .length = total_len * 8, // Total bits to transmit/receive
+        .tx_buffer = tx_buf,
+        .rx_buffer = rx_buf
+    };
+
+    // Perform the polling transmission
+    ret = spi_device_polling_transmit(spi_bme_handle, &t);
+    if (ret != ESP_OK) {
+        free(tx_buf);
+        free(rx_buf);
+        return false;
+    }
+
+    // Copy the received data (skipping the first dummy byte corresponding to the command phase)
+    memcpy(data, &rx_buf[1], len);
+
+    free(tx_buf);
+    free(rx_buf);
+
+    return true; 
+}
+
+static bool bme680_spi_write(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
+{
+    if (!dev || !data || len == 0) return false;
+
+    static uint8_t mosi[BME680_SPI_BUF_SIZE];
+    uint32_t total_len = 1 + len; // 1 byte address + N bytes data
+
+    // Check boundary safety: total packet length cannot exceed buffer size
+    if (total_len > BME680_SPI_BUF_SIZE)
+    {
+        dev->error_code |= BME680_SPI_BUFFER_OVERFLOW;
+        error_dev ("Error on write to SPI slave on bus 1. Tried to transfer more "
+                   "than %d bytes (including address) in one write operation.", 
+                   __FUNCTION__, dev, BME680_SPI_BUF_SIZE);
+        return false;
+    }
+
+    // Set memory page first if a non-status register is used
     if (reg != BME680_REG_STATUS && !bme680_spi_set_mem_page (dev, reg))
     {
         error_dev ("Error on write from SPI slave on bus 1. Could not set mem page.",
@@ -1330,84 +1261,20 @@ static bool bme680_spi_write(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, u
         return false;
     }
 
-    reg &= 0x7f;
-
-    // first byte in output is the register address
+    // For BME680 SPI write, the MSB of the register address must be 0
+    reg &= 0x7F;
     mosi[0] = reg;
 
-    // shift data one byte right, first byte in output is the register address
-    for (int i = 0; i < len; i++)
-        mosi[i+1] = data[i];
+    // Use standard memcpy to safely transfer data into transmission buffer
+    memcpy(&mosi[1], data, len);
 
-    #ifdef BME680_DEBUG_LEVEL_2
-    printf("BME680 %s: Write the following bytes: ", __FUNCTION__);
-    for (int i = 0; i < len+1; i++)
-        printf("%0x ", mosi[i]);
-    printf("\n");
-    #endif
-
-    if (!spi_transfer_pf (dev->bus, dev->cs, mosi, NULL, len+1))
+    // Transfer the address byte along with the payload data
+    if (!spi_transfer_pf (dev->bus, dev->cs, mosi, NULL, total_len))
     {
         error_dev ("Could not write data to SPI.", __FUNCTION__, dev);
         dev->error_code |= BME680_SPI_WRITE_FAILED;
         return false;
     }
-
-    return true;
-}
-
-
-static bool bme680_i2c_read(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
-{
-    if (!dev || !data) return false;
-
-    debug_dev ("Read %d byte from i2c slave register %02x.", __FUNCTION__, dev, len, reg);
-
-    int result = i2c_slave_read(dev->bus, dev->addr, &reg, data, len);
-
-    if (result)
-    {
-        dev->error_code |= (result == -EBUSY) ? BME680_I2C_BUSY : BME680_I2C_READ_FAILED;
-        error_dev ("Error %d on read %d byte from I2C slave register %02x.",
-                    __FUNCTION__, dev, result, len, reg);
-        return false;
-    }
-
-#   ifdef BME680_DEBUG_LEVEL_2
-    printf("BME680 %s: Read following bytes: ", __FUNCTION__);
-    printf("%0x: ", reg);
-    for (int i=0; i < len; i++)
-        printf("%0x ", data[i]);
-    printf("\n");
-#   endif
-
-    return true;
-}
-
-
-static bool bme680_i2c_write(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
-{
-    if (!dev || !data) return false;
-
-    debug_dev ("Write %d byte to i2c slave register %02x.", __FUNCTION__, dev, len, reg);
-
-    int result = i2c_slave_write(dev->bus, dev->addr, &reg, data, len);
-
-    if (result)
-    {
-        dev->error_code |= (result == -EBUSY) ? BME680_I2C_BUSY : BME680_I2C_WRITE_FAILED;
-        error_dev ("Error %d on write %d byte to i2c slave register %02x.",
-                    __FUNCTION__, dev, result, len, reg);
-        return false;
-    }
-
-#   ifdef BME680_DEBUG_LEVEL_2
-    printf("BME680 %s: Wrote the following bytes: ", __FUNCTION__);
-    printf("%0x: ", reg);
-    for (int i=0; i < len; i++)
-        printf("%0x ", data[i]);
-    printf("\n");
-#   endif
 
     return true;
 }

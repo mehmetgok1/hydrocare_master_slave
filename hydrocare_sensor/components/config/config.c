@@ -1,6 +1,5 @@
 #include "config.h"
 #include "esp_heap_caps.h"
-#include "driver/spi_master.h"
 #define fw_version  "0.0.14"
 // Static handles for the ADC driver and calibration to encapsulate them within this file.
 static adc_oneshot_unit_handle_t adc1_handle;
@@ -10,7 +9,7 @@ static bool adc_cali_enabled_chan0 = false;
 static bool adc_cali_enabled_chan1 = false;
 // Peripheral handles are now static to this file
 static spi_device_handle_t spi_bme_handle;
-bme680_sensor_t bme680_sensor;
+bme680_sensor_t* bme680_sensor;
 static const char *TAG = "config";
 
 void initPins()
@@ -133,7 +132,7 @@ void initBME680()
         .queue_size = 1,
     };
     ESP_ERROR_CHECK(spi_bus_add_device(SPI3_HOST, &devcfg, &spi_bme_handle));
-    bme680_sensor=bme680_init_sensor(uint8_t bus, uint8_t addr, uint8_t cs);
+    //bme680_sensor=bme680_init_sensor(1,  0, uint8_t AQ_CS);
 }
 
 adc_oneshot_unit_handle_t get_adc1_handle(void)
@@ -151,25 +150,3 @@ adc_cali_handle_t get_adc1_cali_handle_chan1(void)
     return adc1_cali_handle_chan1;
 }
 
-uint8_t readbme680_register(uint8_t reg_addr)
-{
-    esp_err_t ret;
-    uint8_t tx_data[2];
-    uint8_t rx_data[2];
-
-    // For BME680 SPI read, the MSB of the register address must be 1.
-    tx_data[0] = reg_addr | 0x80;
-    tx_data[1] = 0x00; // Dummy byte to clock out the data
-
-    spi_transaction_t t = {
-        .length = 16, // 2 bytes * 8 bits
-        .tx_buffer = &tx_data,
-        .rx_buffer = &rx_data
-    };
-
-    ret = spi_device_polling_transmit(spi_bme_handle, &t);
-    ESP_ERROR_CHECK(ret);
-
-    // The actual data is in the second byte received.
-    return rx_data[1];
-}

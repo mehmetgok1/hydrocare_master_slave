@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include "driver/spi_master.h"
 #include "bme680.h"
+#include "bme680_types.h"
 
 
 void initPins();
