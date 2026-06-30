@@ -8,4 +8,5 @@ idf_component_register(SRCS "config.c"
                         esp_driver_ledc
                         esp32-camera
                         bme680
+                        lis3dh
 )

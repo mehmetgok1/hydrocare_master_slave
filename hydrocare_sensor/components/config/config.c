@@ -9,8 +9,11 @@ static bool adc_cali_enabled_chan0 = false;
 static bool adc_cali_enabled_chan1 = false;
 // spi for slave to peripheral communication
 spi_device_handle_t spi_bme_handle;
+spi_device_handle_t spi_lis3dh_handle;
+
 //bme680 sensor handle
 bme680_sensor_t *bme680_sensor = NULL; 
+lis3dh_sensor_t *lis3dh_sensor = NULL; 
 
 
 // forward declerations
@@ -214,29 +217,33 @@ void initLIS3DH()
         .spics_io_num = Acc_CS,
         .queue_size = 1,
     };
-    delay(100); 
-    uint8_t who = readRegister(WHO_AM_I);
-    Serial.print("WHO_AM_I: 0x");
-    Serial.println(who, HEX); // Should print 0x33  
-    // 100 Hz, all axes enabled
-    writeRegister(CTRL_REG1, 0x57); 
-    // ±2g, High resolution
-    writeRegister(CTRL_REG4, 0x08); 
-      // 100 Hz, all axes enabled
-    who = readRegister(CTRL_REG1);
-    Serial.print("WHO_AM_I: 0x");
-    Serial.println(who, HEX); // Should print 0x33
-    who = readRegister(CTRL_REG4);
-    Serial.print("WHO_AM_I: 0x");
-    Serial.println(who, HEX); // Should print 0x33
+    ESP_ERROR_CHECK(spi_bus_add_device(SPI3_HOST, &devcfg, &spi_lis3dh_handle));
+    lis3dh_sensor=lis3dh_init_sensor(1,  0, Acc_CS,&spi_lis3dh_handle);
 
-    // Give sensor time to stabilize after configuration
-    delay(150);  // LIS3DH needs time to start outputting valid data
 
-    // Test initial read to verify sensor is outputting data
-    readAcceleration();
-    Serial.printf("Initial accel - X:%.3f Y:%.3f Z:%.3f\n", ax, ay, az);
-    spi.endTransaction();
+    //delay(100); 
+    //uint8_t who = readRegister(WHO_AM_I);
+    //Serial.print("WHO_AM_I: 0x");
+    //Serial.println(who, HEX); // Should print 0x33  
+    //// 100 Hz, all axes enabled
+    //writeRegister(CTRL_REG1, 0x57); 
+    //// ±2g, High resolution
+    //writeRegister(CTRL_REG4, 0x08); 
+    //  // 100 Hz, all axes enabled
+    //who = readRegister(CTRL_REG1);
+    //Serial.print("WHO_AM_I: 0x");
+    //Serial.println(who, HEX); // Should print 0x33
+    //who = readRegister(CTRL_REG4);
+    //Serial.print("WHO_AM_I: 0x");
+    //Serial.println(who, HEX); // Should print 0x33
+//
+    //// Give sensor time to stabilize after configuration
+    //delay(150);  // LIS3DH needs time to start outputting valid data
+//
+    //// Test initial read to verify sensor is outputting data
+    //readAcceleration();
+    //Serial.printf("Initial accel - X:%.3f Y:%.3f Z:%.3f\n", ax, ay, az);
+    //spi.endTransaction();
 
   // Keep SPI open for continuous sensor operation
 }

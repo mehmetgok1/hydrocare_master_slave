@@ -14,6 +14,10 @@
 #include "driver/i2c_master.h"
 #include "esp_heap_caps.h"
 #include "driver/ledc.h"
+#include "lis3dh.h"
+#include "lis3dh_types.h"
+
+
 //initialization functions
 void initPeripherals();
 

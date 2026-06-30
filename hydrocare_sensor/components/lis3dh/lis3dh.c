@@ -1,14 +1,6 @@
-#include <string.h>
-#include <stdlib.h>
-
 #include "lis3dh.h"
 
-
-#define debug(s, f, ...)
-#define debug_dev(s, f, d, ...)
-#define error(s, f, ...)
-#define error_dev(s, f, d, ...)
-
+spi_device_handle_t spi_lis3dh_handle2;
 // register structure definitions
 struct lis3dh_reg_status 
 {
@@ -159,7 +151,7 @@ static bool    lis3dh_spi_write   (lis3dh_sensor_t* dev, uint8_t reg, uint8_t *d
                 return false; \
         }
 
-lis3dh_sensor_t* lis3dh_init_sensor (uint8_t bus, uint8_t addr, uint8_t cs)
+lis3dh_sensor_t* lis3dh_init_sensor (uint8_t bus, uint8_t addr, uint8_t cs,spi_device_handle_t *spi_handle )
 {
     lis3dh_sensor_t* dev;
 
@@ -175,15 +167,7 @@ lis3dh_sensor_t* lis3dh_init_sensor (uint8_t bus, uint8_t addr, uint8_t cs)
     dev->scale      = lis3dh_scale_2_g;
     dev->fifo_mode  = lis3dh_bypass;
     dev->fifo_first = true;
-    
-    // if addr==0 then SPI is used and has to be initialized
-    if (!addr && !spi_device_init (bus, cs))
-    {
-        error_dev ("Could not initialize SPI interface.", __FUNCTION__, dev);
-        free (dev);
-        return NULL;
-    }
-        
+    spi_lis3dh_handle2=*spi_handle;    
     // check availability of the sensor
     if (!lis3dh_is_available (dev))
     {
@@ -1014,39 +998,49 @@ bool lis3dh_reg_write(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t
 
 static bool lis3dh_spi_read(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
 {
-    if (!dev || !data) return false;
+    if (len == 0 || data == NULL || dev == NULL) return false;
 
-    if (len >= LIS3DH_SPI_BUF_SIZE)
+    uint32_t total_len = 1 + len; // 1 byte address + N bytes data
+
+    // Strict boundary assessment against the buffer macro size
+    if (total_len > LIS3DH_SPI_BUF_SIZE)
     {
         dev->error_code |= LIS3DH_SPI_BUFFER_OVERFLOW;
-        error_dev ("Error on read from SPI slave on bus 1. Tried to transfer "
-                   "more than %d byte in one read operation.",
-                   __FUNCTION__, dev, LIS3DH_SPI_BUF_SIZE);
+        error_dev("Error on read from SPI slave on bus 1. Tried to transfer more "
+                  "than %d bytes in one read operation.", __FUNCTION__, dev, LIS3DH_SPI_BUF_SIZE);
         return false;
     }
 
-    uint8_t addr = (reg & 0x3f) | LIS3DH_SPI_READ_FLAG | LIS3DH_SPI_AUTO_INC_FLAG;
-    
-    static uint8_t mosi[LIS3DH_SPI_BUF_SIZE];
-    static uint8_t miso[LIS3DH_SPI_BUF_SIZE];
+    // CRITICAL: Use stack-allocated arrays instead of malloc()!
+    // Since LIS3DH_SPI_BUF_SIZE is small, this completely eliminates heap fragmentation
+    // and guarantees malloc won't return NULL under tight SRAM constraints.
+    uint8_t tx_buf[LIS3DH_SPI_BUF_SIZE];
+    uint8_t rx_buf[LIS3DH_SPI_BUF_SIZE];
 
-    memset (mosi, 0xff, LIS3DH_SPI_BUF_SIZE);
-    memset (miso, 0xff, LIS3DH_SPI_BUF_SIZE);
+    // Clear tx_buf and set the first byte to the register address 
+    // We combine with READ (0x80) and AUTO_INC (0x40) flags for multi-byte reads
+    memset(tx_buf, 0x00, total_len); 
+    tx_buf[0] = reg | LIS3DH_SPI_READ_FLAG | LIS3DH_SPI_AUTO_INC_FLAG;
 
-    mosi[0] = addr;
-    
-    if (!spi_transfer_pf (dev->bus, dev->cs, mosi, miso, len+1))
-    {
-        error_dev ("Could not read data from SPI", __FUNCTION__, dev);
+    spi_transaction_t t;
+    memset(&t, 0, sizeof(t));      // Ensure the transaction struct has no garbage values
+    t.length = total_len * 8;       // Total bits to transmit/receive
+    t.tx_buffer = tx_buf;           
+    t.rx_buffer = rx_buf;           
+
+    // Perform the high-efficiency polling transmission
+    // Replace 'spi_lis3dh_handle' with whatever your global spi_device_handle_t is named!
+    esp_err_t ret = spi_device_polling_transmit(dev->spi_handle, &t);
+    if (ret != ESP_OK) {
+        error_dev("Could not read data from SPI", __FUNCTION__, dev);
         dev->error_code |= LIS3DH_SPI_READ_FAILED;
         return false;
     }
-    
-    // shift data one by left, first byte received while sending register address is invalid
-    for (int i=0; i < len; i++)
-      data[i] = miso[i+1];
 
-    return true;
+    // Copy the received data (skipping the command/address index tracking dummy byte)
+    memcpy(data, rx_buf + 1, len);
+
+    return true; 
 }
 
 
@@ -1067,23 +1061,13 @@ static bool lis3dh_spi_write(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, u
 
         return false;
     }
-
     reg &= 0x7f;
-
     // first byte in output is the register address
     mosi[0] = addr;
 
     // shift data one byte right, first byte in output is the register address
     for (int i = 0; i < len; i++)
         mosi[i+1] = data[i];
-
-    #ifdef LIS3DH_DEBUG_LEVEL_2
-    printf("LIS3DH %s: Write the following bytes to reg %02x: ", __FUNCTION__, reg);
-    for (int i = 1; i < len+1; i++)
-        printf("%02x ", mosi[i]);
-    printf("\n");
-    #endif
-
     if (!spi_transfer_pf (dev->bus, dev->cs, mosi, NULL, len+1))
     {
         error_dev ("Could not write data to SPI.", __FUNCTION__, dev);

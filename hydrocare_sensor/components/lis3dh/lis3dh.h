@@ -3,6 +3,14 @@
 
 
 #include "lis3dh_types.h"
+#include "driver/spi_master.h"
+#include <string.h>
+#include <stdlib.h>
+
+#define debug(s, f, ...)
+#define debug_dev(s, f, d, ...)
+#define error(s, f, ...)
+#define error_dev(s, f, d, ...)
 
 // LIS3DH addresses (also used for LIS2DH, LIS2DH12 and LIS2DE12)
 #define LIS3DH_I2C_ADDRESS_1           0x18  // SDO pin is low
@@ -97,7 +105,7 @@ extern "C"
 {
 #endif
 
-lis3dh_sensor_t* lis3dh_init_sensor (uint8_t bus, uint8_t addr, uint8_t cs);
+lis3dh_sensor_t* lis3dh_init_sensor (uint8_t bus, uint8_t addr, uint8_t cs,spi_device_handle_t *spi_handle);
 bool lis3dh_set_mode (lis3dh_sensor_t* dev, 
                       lis3dh_odr_mode_t odr, lis3dh_resolution_t res,
                       bool x, bool y, bool z);
