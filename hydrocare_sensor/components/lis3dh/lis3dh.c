@@ -139,7 +139,6 @@ struct lis3dh_reg_click_cfg
 
 
 /** Forward declaration of functions for internal use */
-
 static bool    lis3dh_reset       (lis3dh_sensor_t* dev);
 static bool    lis3dh_is_available(lis3dh_sensor_t* dev);
 
@@ -995,8 +994,7 @@ bool lis3dh_reg_read(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t 
 {
     if (!dev || !data) return false;
 
-    return (dev->addr) ? lis3dh_i2c_read (dev, reg, data, len)
-                       : lis3dh_spi_read (dev, reg, data, len);
+    return lis3dh_spi_read (dev, reg, data, len);
 }
 
 
@@ -1004,8 +1002,7 @@ bool lis3dh_reg_write(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t
 {
     if (!dev || !data) return false;
 
-    return (dev->addr) ? lis3dh_i2c_write (dev, reg, data, len)
-                       : lis3dh_spi_write (dev, reg, data, len);
+    return lis3dh_spi_write (dev, reg, data, len);
 }
 
 
@@ -1048,13 +1045,6 @@ static bool lis3dh_spi_read(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, ui
     // shift data one by left, first byte received while sending register address is invalid
     for (int i=0; i < len; i++)
       data[i] = miso[i+1];
-
-    #ifdef LIS3DH_DEBUG_LEVEL_2
-    printf("LIS3DH %s: read the following bytes from reg %02x: ", __FUNCTION__, reg);
-    for (int i=0; i < len; i++)
-        printf("%02x ", data[i]);
-    printf("\n");
-    #endif
 
     return true;
 }
@@ -1100,70 +1090,6 @@ static bool lis3dh_spi_write(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, u
         dev->error_code |= LIS3DH_SPI_WRITE_FAILED;
         return false;
     }
-
-    return true;
-}
-
-
-#define I2C_AUTO_INCREMENT (0x80)
-
-static bool lis3dh_i2c_read(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
-{
-    if (!dev || !data) return false;
-
-    debug_dev ("Read %d byte from i2c slave register %02x.", __FUNCTION__, dev, len, reg);
-
-    if (len > 1)
-        reg |= I2C_AUTO_INCREMENT;
-    
-    int result = i2c_slave_read(dev->bus, dev->addr, &reg, data, len);
-
-    if (result)
-    {
-        dev->error_code |= (result == -EBUSY) ? LIS3DH_I2C_BUSY : LIS3DH_I2C_READ_FAILED;
-        error_dev ("Error %d on read %d byte from I2C slave register %02x.",
-                    __FUNCTION__, dev, result, len, reg);
-        return false;
-    }
-
-#   ifdef LIS3DH_DEBUG_LEVEL_2
-    printf("LIS3DH %s: Read following bytes: ", __FUNCTION__);
-    printf("%02x: ", reg & 0x7f);
-    for (int i=0; i < len; i++)
-        printf("%02x ", data[i]);
-    printf("\n");
-#   endif
-
-    return true;
-}
-
-
-static bool lis3dh_i2c_write(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
-{
-    if (!dev || !data) return false;
-
-    debug_dev ("Write %d byte to i2c slave register %02x.", __FUNCTION__, dev, len, reg);
-
-    if (len > 1)
-        reg |= I2C_AUTO_INCREMENT;
-
-    int result = i2c_slave_write(dev->bus, dev->addr, &reg, data, len);
-
-    if (result)
-    {
-        dev->error_code |= (result == -EBUSY) ? LIS3DH_I2C_BUSY : LIS3DH_I2C_WRITE_FAILED;
-        error_dev ("Error %d on write %d byte to i2c slave register %02x.",
-                    __FUNCTION__, dev, result, len, reg);
-        return false;
-    }
-
-#   ifdef LIS3DH_DEBUG_LEVEL_2
-    printf("LIS3DH %s: Wrote the following bytes: ", __FUNCTION__);
-    printf("%02x: ", reg & 0x7f);
-    for (int i=0; i < len; i++)
-        printf("%02x ", data[i]);
-    printf("\n");
-#   endif
 
     return true;
 }
