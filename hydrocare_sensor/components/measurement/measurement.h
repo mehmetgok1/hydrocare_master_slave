@@ -2,33 +2,31 @@
 #define MEASUREMENT_H
 
 #include <stdint.h>
-#include "driver/spi_master.h"
-#include "driver/i2c.h"
+#include "config.h"
 
-// Global variables for sensor readings, accessible by other components
-extern uint16_t ambLight;
-extern uint16_t microphone;
-extern float ax, ay, az;
-extern float bme_temp;
-extern float bme_hum;
-extern float bme_pres;
-extern float bme_gas;
-
-// Forward declaration for the MLX90641 C-style handle
-typedef struct MLX90641_handle_t MLX90641_handle_t;
-extern MLX90641_handle_t myIRcam;
-
-// Initialization functions
-void initIMU();
-void initIRTemp();
-void initBME688();
-void initCamera();
 
 // Measurement functions
-void readAcceleration();
-void measureAmbLight();
-void measureMicrophone();
-void measureIRTemp();
-void measureBME688();
+//void readAcceleration();
+//void measureAmbLight();
+//void measureMicrophone();
+//void measureIRTemp();
+
+//bme680 calls
+void read_bme680_chip_id();
+bme680_values_float_t* measureBME680();
+
+//ov3660 camera calls
+void get_ov3660_image(uint16_t* currentData);
+
+//power led calls
+void set_led_brightness(uint8_t brightness_pct);
+//IR led calls
+void set_ir_led(bool status);
+
+
+
+/*DEFINITIONS*/
+//ov3660 definitions
+#define CROP_SIZE 64
 
 #endif // MEASUREMENT_H
