@@ -10,15 +10,15 @@ static const char *TAG = "MAIN";
 
 void app_main(void) {
   initPeripherals();
-  lis3dh_float_data_t* lis3dh_data = measureLIS3DH();
+  lis3dh_float_data_t* lis3dh_data =malloc(sizeof(lis3dh_float_data_t));
+  lis3dh_data = measureLIS3DH();
   if (lis3dh_data) {
-    ESP_LOGI(TAG, "LIS3DH Data - X: %.2f, Y: %.2f, Z: %.2f", lis3dh_data->x, lis3dh_data->y, lis3dh_data->z);
+    ESP_LOGI(TAG, "LIS3DH Data - X: %.2f, Y: %.2f, Z: %.2f", lis3dh_data->ax, lis3dh_data->ay, lis3dh_data->az);
     free(lis3dh_data);
   } else {
     ESP_LOGE(TAG, "Failed to read data from LIS3DH sensor");
   } 
-  //powerLEDInit();
-  //initSPIComm();
+  
   //// Start background tasks
   //startHighSpeedSamplerTask();
   //startIRSensorTask();
