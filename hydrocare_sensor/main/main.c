@@ -25,6 +25,23 @@ void app_main(void) {
     ESP_LOGE(TAG, "Failed to read thermal frame data");
   }
 
+  uint16_t* ambLight = malloc(sizeof(uint16_t));
+  ambLight = measureAmbLight();
+  if (ambLight) {
+    ESP_LOGI(TAG, "Ambient Light Measurement: %" PRIu16 " uA", *ambLight);
+    free(ambLight);
+  } else {
+    ESP_LOGE(TAG, "Failed to measure ambient light");
+  }
+  uint16_t* microphone = malloc(sizeof(uint16_t));
+  microphone = measureMicrophone();
+  if (microphone) {
+    ESP_LOGI(TAG, "Microphone Measurement: %" PRIu16 " mV", *microphone);
+    free(microphone);
+  } else {
+    ESP_LOGE(TAG, "Failed to measure microphone");
+  }
+
   //// Start background tasks
   //startHighSpeedSamplerTask();
   //startIRSensorTask();

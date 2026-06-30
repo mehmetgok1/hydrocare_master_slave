@@ -5,44 +5,58 @@
 static const char *TAG = "MEASUREMENT";
 
 
-
-/*void measureAmbLight()
+uint16_t* measureAmbLight(void)
 {
-  int raw = 0;
-  // Read from ADC_CHANNEL_0 (GPIO 1) using the new one-shot driver
-  // We get the handle from the config component now
-  ESP_ERROR_CHECK(adc_oneshot_read(get_adc1_handle(), ADC_CHANNEL_0, &raw));
+    int raw = 0;
+    int voltage_mv = 0;
+    uint16_t* ambLight = malloc(sizeof(uint16_t));
+    // 1. Read the raw 12-bit value once
+    esp_err_t err = adc_oneshot_read(get_adc1_handle(), ADC_CHANNEL_0, &raw);
+    if (err != ESP_OK) {
+        ESP_LOGE("MEASUREMENT", "Failed to read raw ADC1 Channel 0 value!");
+        return NULL; // Return previous value on failure instead of breaking
+    }
 
-  // We also get the calibration handles and status via getter functions
-  int voltage_mv = 0;
-  if (adc_cali_enabled_chan0) {
-      ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_handle_chan0, raw, &voltage_mv));
-  } else {
-      // Fallback to rough calculation if calibration failed
-      voltage_mv = (raw / 4095.0) * VREF * 1000;
-  }
+    // 2. Convert raw bits into calibrated Millivolts using the configuration getter
+    if (is_adc_cali_enabled_chan0()) { 
+        adc_cali_raw_to_voltage(get_adc1_cali_handle_chan0(), raw, &voltage_mv);
+    } else {
+        // Fallback scaling calculation
+        voltage_mv = (int)((raw / 4095.0f) * VREF * 1000.0f);
+    }
 
-  float current = (voltage_mv / 1000.0) / R_LOAD; // in Amps
-  float current_uA = current * 1e6;               // convert to microamps
-  ambLight = (uint16_t)current_uA; // calibration factor (adjust!)
-}*/
+    // 3. Convert voltage drop over load resistor into Microamps (uA)
+    float voltage_v = voltage_mv / 1000.0f;
+    float current_amps = voltage_v / R_LOAD;
+    float current_uA = current_amps * 1000000.0f;
 
-/*void measureMicrophone()
+    *ambLight = (uint16_t)current_uA;
+    return ambLight;
+}
+
+uint16_t* measureMicrophone(void)
 {
-  int raw = 0;
-  // Read from ADC_CHANNEL_1 (GPIO 2) using the new one-shot driver
-  ESP_ERROR_CHECK(adc_oneshot_read(get_adc1_handle(), ADC_CHANNEL_1, &raw));
+    int raw = 0;
+    int voltage_mv = 0;
+    uint16_t* microphone = malloc(sizeof(uint16_t));
 
-  int voltage_mv = 0;
-  if (is_adc_cali_enabled_chan1()) {
-      ESP_ERROR_CHECK(adc_cali_raw_to_voltage(adc1_cali_handle_chan1, raw, &voltage_mv));
-  }
+    // 1. Read raw value
+    esp_err_t err = adc_oneshot_read(get_adc1_handle(), ADC_CHANNEL_1, &raw);
+    if (err != ESP_OK) {
+        ESP_LOGE("MEASUREMENT", "Failed to read raw ADC1 Channel 1 value!");
+        return NULL; // Return previous value on failure
+    }
 
-  microphone = (uint16_t)voltage_mv;  // Store in millivolts
-}*/
+    // 2. Convert to millivolts using the channel 1 calibration getter
+    if (is_adc_cali_enabled_chan1()) {
+        adc_cali_raw_to_voltage(get_adc1_cali_handle_chan1(), raw, &voltage_mv);
+    } else {
+        voltage_mv = (int)((raw / 4095.0f) * VREF * 1000.0f);
+    }
 
-// Pull the calibration parameters from config.c
-extern paramsMLX90641 mlx90641_params;
+    *microphone = (uint16_t)voltage_mv;
+    return microphone;
+}
 
 float* read_thermal_matrix_frame(void) {
     // 1. Allocate the temporary raw frame storage on the heap (~640 bytes)
@@ -72,10 +86,10 @@ float* read_thermal_matrix_frame(void) {
     }
 
     // 4. Calculate the ambient temperature of the sensor body first
-    TR = MLX90641_GetTa(mlx90641FrameData, &mlx90641_params) - 8.0; 
+    TR = MLX90641_GetTa(mlx90641FrameData, get_mlx90641_params()) - 8.0; 
 
     // 5. Calculate the real temperatures for all 192 individual pixels!
-    MLX90641_CalculateTo(mlx90641FrameData, &mlx90641_params, emissivity, TR, mlx90641Frame);
+    MLX90641_CalculateTo(mlx90641FrameData, get_mlx90641_params(), emissivity, TR, mlx90641Frame);
 
     // 6. Raw data buffer is no longer needed. Clean it up immediately!
     free(mlx90641FrameData);

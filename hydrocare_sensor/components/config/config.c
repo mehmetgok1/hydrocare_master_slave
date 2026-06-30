@@ -277,7 +277,12 @@ void initIRTemp()
 
 
 /* GETTER FUNCTIONS FOR HANDLERS ETC. */
-
+ 
+// This function passes a pointer to that static structure
+paramsMLX90641* get_mlx90641_params(void)
+{
+    return &mlx90641_params;
+}
 
 lis3dh_sensor_t* get_lis3dh_dev_handle(void)
 {
@@ -302,4 +307,14 @@ adc_cali_handle_t get_adc1_cali_handle_chan0(void)
 adc_cali_handle_t get_adc1_cali_handle_chan1(void)
 {
     return adc1_cali_handle_chan1;
+}
+// Add these getters:
+bool is_adc_cali_enabled_chan0(void)
+{
+    return adc_cali_enabled_chan0;
+}
+
+bool is_adc_cali_enabled_chan1(void)
+{
+    return adc_cali_enabled_chan1;
 }

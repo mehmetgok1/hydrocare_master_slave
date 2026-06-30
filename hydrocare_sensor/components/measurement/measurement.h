@@ -4,13 +4,6 @@
 #include <stdint.h>
 #include "config.h"
 
-
-// Measurement functions
-//void readAcceleration();
-//void measureAmbLight();
-//void measureMicrophone();
-//void measureIRTemp();
-
 //bme680 calls
 bme680_values_float_t* measureBME680();
 
@@ -29,9 +22,18 @@ lis3dh_float_data_t* measureLIS3DH();
 // IRTEMP camera calls
 float* read_thermal_matrix_frame(void);
 
+// microphone measurement function
+uint16_t* measureMicrophone(void);
+
+// ambient light measurement function
+uint16_t* measureAmbLight(void);
+
+
 
 /*DEFINITIONS*/
 //ov3660 definitions
 #define CROP_SIZE 64
-
+//adc mic and ambient light definitions
+#define VREF            3.3f    // Max reference voltage 
+#define R_LOAD          10000.0f // Load resistor value in Ohms (Adjust to match your schematic)
 #endif // MEASUREMENT_H
