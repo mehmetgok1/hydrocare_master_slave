@@ -1,8 +1,4 @@
-#include <inttypes.h>
-#include "esp_log.h"
-#include "freertos/FreeRTOS.h" // For vTaskDelay, pdMS_TO_TICKS if uncommented
-#include "freertos/task.h"     // For vTaskDelay if uncommented
-#include "config.h"
+#include <inttypes.h>    // For vTaskDelay if uncommented
 #include "measurement.h"
 
 static const char *TAG = "MAIN";
@@ -18,7 +14,17 @@ void app_main(void) {
   } else {
     ESP_LOGE(TAG, "Failed to read data from LIS3DH sensor");
   } 
-  
+  float *thermal_frame =malloc(192 * sizeof(float));
+  thermal_frame = read_thermal_matrix_frame();
+  if (thermal_frame) {
+    ESP_LOGI(TAG, "Thermal Frame Data - First Pixel: %.2f", thermal_frame[0]);
+    ESP_LOGI(TAG, "Thermal Frame Data - Last Pixel: %.2f", thermal_frame[191]);
+    ESP_LOGI(TAG, "Thermal Frame Data - Middle Pixel: %.2f", thermal_frame[95]);
+    free(thermal_frame);
+  } else {
+    ESP_LOGE(TAG, "Failed to read thermal frame data");
+  }
+
   //// Start background tasks
   //startHighSpeedSamplerTask();
   //startIRSensorTask();

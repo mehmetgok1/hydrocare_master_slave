@@ -1,0 +1,13 @@
+idf_component_register(
+    SRCS 
+        "functions/MLX90641_API.c"
+        "functions/MLX90641_I2C_Driver.c"
+    INCLUDE_DIRS 
+        "headers"
+    REQUIRES
+        esp_driver_gpio
+        esp_driver_spi
+        esp_driver_i2c
+        esp_adc
+        esp_driver_ledc
+)

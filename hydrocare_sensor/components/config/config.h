@@ -16,7 +16,8 @@
 #include "driver/ledc.h"
 #include "lis3dh.h"
 #include "lis3dh_types.h"
-
+#include "MLX90641_API.h"
+#include "MLX90641_I2C_Driver.h"
 
 //initialization functions
 void initPeripherals();
@@ -37,14 +38,9 @@ bme680_sensor_t* get_bme_dev_handle(void);
 //no need for getter in this lib implemenetation
 //getter functions for LIS3DH handles
 lis3dh_sensor_t* get_lis3dh_dev_handle(void);
+//getter functions for MLX90614 handles
 
 /*USEFUL DEFINITIONS*/
-// I2C address
-#define WHO_AM_I 0x0F
-#define CTRL_REG1 0x20
-#define CTRL_REG4 0x23
-
-//Power led PWM configuration
 // PWM configuration for the power LED
 #define LEDC_TIMER              LEDC_TIMER_1
 #define LEDC_MODE               LEDC_LOW_SPEED_MODE

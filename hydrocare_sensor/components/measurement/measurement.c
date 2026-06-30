@@ -1,37 +1,10 @@
 #include "measurement.h"
 
+
+
 static const char *TAG = "MEASUREMENT";
 
-/*// Helper function to read multiple bytes from a register via SPI
-static void readMultiple(spi_device_handle_t spi, uint8_t startReg, uint8_t *buffer, uint8_t len)
-{
-    spi_transaction_t t;
-    memset(&t, 0, sizeof(t));
-    t.cmd = 0xC0 | startReg; // Read + Auto increment
-    t.length = len * 8;
-    t.rx_buffer = buffer;
-    spi_device_polling_transmit(spi, &t);
-}*/
 
-/*void readAcceleration()
-{
-  uint8_t rawData[6];
-  readMultiple(get_spi_imu_handle(), OUT_X_L, rawData, 6);
-
-  int16_t x = (int16_t)(rawData[1] << 8 | rawData[0]);
-  int16_t y = (int16_t)(rawData[3] << 8 | rawData[2]);
-  int16_t z = (int16_t)(rawData[5] << 8 | rawData[4]);
-
-  // High-resolution mode: 12-bit left-aligned
-  x >>= 4;
-  y >>= 4;
-  z >>= 4;
-
-  // ±2g sensitivity = 1 mg/LSB
-  ax = x * 0.001f;
-  ay = y * 0.001f;
-  az = z * 0.001f;
-}*/
 
 /*void measureAmbLight()
 {
@@ -68,14 +41,48 @@ static void readMultiple(spi_device_handle_t spi, uint8_t startReg, uint8_t *buf
   microphone = (uint16_t)voltage_mv;  // Store in millivolts
 }*/
 
-/*void measureIRTemp()
-{
-    // This function now depends on your C-based MLX90641 driver.
-    // The logic remains the same, but the function calls will change.
-    // mlx90641_read_temp_c(&myIRcam);
-    // mlx90641_clear_new_data_bit(&myIRcam);
-}*/
+// Pull the calibration parameters from config.c
+extern paramsMLX90641 mlx90641_params;
 
+float* read_thermal_matrix_frame(void) {
+    // 1. Allocate the temporary raw frame storage on the heap (~640 bytes)
+    uint16_t* mlx90641FrameData = malloc(320 * sizeof(uint16_t));
+    
+    // 2. Allocate the final output temperature array on the heap (~768 bytes)
+    float* mlx90641Frame = malloc(192 * sizeof(float));
+    
+    // Safety Catch: Check if any allocation failed
+    if (mlx90641FrameData == NULL || mlx90641Frame == NULL) {
+        ESP_LOGE("MEASUREMENT", "Heap allocation failed for thermal frame processing!");
+        free(mlx90641FrameData); // Safe to pass NULL to free()
+        free(mlx90641Frame);
+        return NULL;
+    }
+    
+    float emissivity = 0.95; 
+    float TR; 
+
+    // 3. Fetch raw data from the camera array (Default Address: 0x33)
+    int status = MLX90641_GetFrameData(0x33, mlx90641FrameData);
+    if (status < 0) {
+        ESP_LOGE("MEASUREMENT", "Error getting frame data from MLX90641");
+        free(mlx90641FrameData);
+        free(mlx90641Frame);
+        return NULL;
+    }
+
+    // 4. Calculate the ambient temperature of the sensor body first
+    TR = MLX90641_GetTa(mlx90641FrameData, &mlx90641_params) - 8.0; 
+
+    // 5. Calculate the real temperatures for all 192 individual pixels!
+    MLX90641_CalculateTo(mlx90641FrameData, &mlx90641_params, emissivity, TR, mlx90641Frame);
+
+    // 6. Raw data buffer is no longer needed. Clean it up immediately!
+    free(mlx90641FrameData);
+
+    // 7. Return the pointer to the calculated temperatures
+    return mlx90641Frame;
+}
 
 
 lis3dh_float_data_t* measureLIS3DH()

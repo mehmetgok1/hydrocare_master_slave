@@ -9,4 +9,5 @@ idf_component_register(SRCS "config.c"
                         esp32-camera
                         bme680
                         lis3dh
+                        mlx90641
 )

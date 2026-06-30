@@ -12,12 +12,14 @@ static bool adc_cali_enabled_chan1 = false;
 // spi for slave to peripheral communication
 spi_device_handle_t spi_bme_handle;
 spi_device_handle_t spi_lis3dh_handle;
-
+// I2C bus handle for MLX90614
+i2c_master_bus_handle_t i2c0_bus_hdl = NULL;
 //bme680 sensor handle
 bme680_sensor_t *bme680_sensor = NULL; 
+//lis3dh sensor handle
 lis3dh_sensor_t *lis3dh_sensor = NULL; 
-
-
+//IRTEMP camera handlers
+//no need for getter in this lib implemenetation
 // forward declerations
 void initPins();
 void init_adc_peripheral();
@@ -26,6 +28,10 @@ void initBME680();
 void initCamera();
 void powerLEDInit();
 void initLIS3DH();
+void initI2CBus();
+void initIRTemp();
+
+static paramsMLX90641 mlx90641_params;
 static const char *TAG = "config";
 
 void initPeripherals()
@@ -37,7 +43,8 @@ void initPeripherals()
     initCamera();
     powerLEDInit();
     initLIS3DH();
-    //initIRTemp();
+    initI2CBus();
+    initIRTemp();
     // Get available PSRAM size
     size_t available_PSRAM_size = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
     ESP_LOGI(TAG, "PSRAM Size available (bytes): %d", available_PSRAM_size);
@@ -230,7 +237,47 @@ void initLIS3DH()
     lis3dh_set_mode (lis3dh_sensor, lis3dh_odr_10, lis3dh_high_res, true, true, true);
 
 }
+void initI2CBus(void) {
+    i2c_master_bus_config_t bus_config = {
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .i2c_port = I2C_NUM_0,              // Maps to I2C0
+        .scl_io_num = SCL,                   // Replace with your actual SCL GPIO pin number
+        .sda_io_num = SDA,                   // Replace with your actual SDA GPIO pin number
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true, 
+    };
+
+    // Initialize the master bus
+    ESP_ERROR_CHECK(i2c_new_master_bus(&bus_config, &i2c0_bus_hdl));
+}
+
+void initIRTemp()
+{
+    MLX90641_I2CInit();
+    uint16_t* eeMLX90641 = malloc(832 * sizeof(uint16_t));
+    if (eeMLX90641 == NULL) {
+        ESP_LOGE("IR_TEMP", "Failed to allocate heap memory for EEPROM buffer!");
+        return;
+    }
+    int error = MLX90641_DumpEE(0x33, eeMLX90641);
+    if (error != 0) {
+        ESP_LOGE("IR_TEMP", "Failed to dump EEPROM data!");
+        free(eeMLX90641); // Clean up heap space on failure
+        return;
+    }
+    error = MLX90641_ExtractParameters(eeMLX90641, &mlx90641_params);
+    if (error != 0) {
+        ESP_LOGE("IR_TEMP", "Parameter extraction failed.");
+        free(eeMLX90641); // Clean up heap space on failure
+        return;
+    }
+    free(eeMLX90641);
+    ESP_LOGI("IR_TEMP", "Initialization successful. eeMLX90641 heap memory has been safely freed.");
+}
+
+
 /* GETTER FUNCTIONS FOR HANDLERS ETC. */
+
 
 lis3dh_sensor_t* get_lis3dh_dev_handle(void)
 {
