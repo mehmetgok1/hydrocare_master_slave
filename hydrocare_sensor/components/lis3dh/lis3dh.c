@@ -141,15 +141,20 @@ static bool    lis3dh_spi_write   (lis3dh_sensor_t* dev, uint8_t reg, uint8_t *d
 #define lsb_msb_to_type(t,b,o) (t)(((t)b[o+1] << 8) | b[o])
 #define lsb_to_type(t,b,o)     (t)(b[o])
 
-#define lis3dh_update_reg(dev,addr,type,elem,value) \
-        { \
-            struct type __reg; \
-            if (!lis3dh_reg_read (dev, (addr), (uint8_t*)&__reg, 1)) \
-                return false; \
+#define lis3dh_update_reg(dev, addr, type, elem, value) \
+    ({ \
+        bool __success = true; \
+        struct type __reg; \
+        if (!lis3dh_reg_read(dev, (addr), (uint8_t*)&__reg, 1)) { \
+            __success = false; \
+        } else { \
             __reg.elem = (value); \
-            if (!lis3dh_reg_write (dev, (addr), (uint8_t*)&__reg, 1)) \
-                return false; \
-        }
+            if (!lis3dh_reg_write(dev, (addr), (uint8_t*)&__reg, 1)) { \
+                __success = false; \
+            } \
+        } \
+        __success; \
+    })
 
 lis3dh_sensor_t* lis3dh_init_sensor (uint8_t bus, uint8_t addr, uint8_t cs,spi_device_handle_t *spi_handle )
 {
@@ -223,7 +228,8 @@ bool lis3dh_set_mode (lis3dh_sensor_t* dev,
     
     // if sensor was in power down mode it takes at least 100 ms to start in another mode
     if (old_odr == lis3dh_power_down && odr != lis3dh_power_down)
-        vTaskDelay (15);
+        vTaskDelay (15); 
+    
 
     return false;
 }
@@ -570,9 +576,11 @@ bool lis3dh_set_int_event_config (lis3dh_sensor_t* dev,
         case lis3dh_free_fall   : intx_cfg.AOI = 1; intx_cfg.SIXD = 0; break;
 
         case lis3dh_4d_movement : d4d_int = true;
+                                  [[fallthrough]]; // Tells GCC this is intentional
         case lis3dh_6d_movement : intx_cfg.AOI = 0; intx_cfg.SIXD = 1; break;
 
         case lis3dh_4d_position : d4d_int = true;
+                                  [[fallthrough]]; // Tells GCC this is intentional
         case lis3dh_6d_position : intx_cfg.AOI = 1; intx_cfg.SIXD = 1; break;
     }
 
@@ -1030,7 +1038,7 @@ static bool lis3dh_spi_read(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, ui
 
     // Perform the high-efficiency polling transmission
     // Replace 'spi_lis3dh_handle' with whatever your global spi_device_handle_t is named!
-    esp_err_t ret = spi_device_polling_transmit(dev->spi_handle, &t);
+    esp_err_t ret = spi_device_polling_transmit(spi_lis3dh_handle2, &t);
     if (ret != ESP_OK) {
         error_dev("Could not read data from SPI", __FUNCTION__, dev);
         dev->error_code |= LIS3DH_SPI_READ_FAILED;
@@ -1046,31 +1054,47 @@ static bool lis3dh_spi_read(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, ui
 
 static bool lis3dh_spi_write(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
 {
-    if (!dev || !data) return false;
+    if (!dev || !data || len == 0) return false;
 
-    uint8_t addr = (reg & 0x3f) | LIS3DH_SPI_WRITE_FLAG | LIS3DH_SPI_AUTO_INC_FLAG;
+    uint32_t total_len = 1 + len; // 1 byte address + N bytes data
 
-    static uint8_t mosi[LIS3DH_SPI_BUF_SIZE];
-
-    if (len >= LIS3DH_SPI_BUF_SIZE)
+    // Check boundary safety: total packet length cannot exceed buffer size
+    if (total_len > LIS3DH_SPI_BUF_SIZE)
     {
         dev->error_code |= LIS3DH_SPI_BUFFER_OVERFLOW;
-        error_dev ("Error on write to SPI slave on bus 1. Tried to transfer more"
-                   "than %d byte in one write operation.", 
+        error_dev ("Error on write to SPI slave on bus 1. Tried to transfer more "
+                   "than %d bytes (including address) in one write operation.", 
                    __FUNCTION__, dev, LIS3DH_SPI_BUF_SIZE);
-
         return false;
     }
-    reg &= 0x7f;
-    // first byte in output is the register address
+
+    // Stack-allocated transmission buffer to avoid heap fragmentation
+    uint8_t mosi[LIS3DH_SPI_BUF_SIZE];
+    memset(mosi, 0, total_len);
+
+    // For LIS3DH SPI write, Bit 7 (MSB) must be 0. 
+    // We optionally keep the auto-increment flag if writing multiple continuous configuration registers.
+    uint8_t addr = (reg & 0x3F) | LIS3DH_SPI_WRITE_FLAG; 
+    if (len > 1) {
+        addr |= LIS3DH_SPI_AUTO_INC_FLAG;
+    }
     mosi[0] = addr;
 
-    // shift data one byte right, first byte in output is the register address
-    for (int i = 0; i < len; i++)
-        mosi[i+1] = data[i];
-    if (!spi_transfer_pf (dev->bus, dev->cs, mosi, NULL, len+1))
+    // Use standard memcpy to safely transfer payload data into transmission buffer
+    memcpy(mosi + 1, data, len);
+
+    // Set up native ESP-IDF SPI transaction
+    spi_transaction_t t;
+    memset(&t, 0, sizeof(t));
+    t.length    = total_len * 8; // Driver expects length in bits
+    t.tx_buffer = mosi;          // Transmit data buffer
+    t.rx_buffer = NULL;          // No data read required for a pure write
+
+    // Transfer using native ESP-IDF polling driver
+    esp_err_t ret = spi_device_polling_transmit(spi_lis3dh_handle2, &t);
+    if (ret != ESP_OK)
     {
-        error_dev ("Could not write data to SPI.", __FUNCTION__, dev);
+        error_dev ("Could not write data to SPI. Native error code: 0x%x", __FUNCTION__, dev, ret);
         dev->error_code |= LIS3DH_SPI_WRITE_FAILED;
         return false;
     }
