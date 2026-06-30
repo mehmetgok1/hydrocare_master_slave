@@ -29,11 +29,14 @@ adc_cali_handle_t get_adc1_cali_handle_chan0(void);
 adc_cali_handle_t get_adc1_cali_handle_chan1(void);
 bool is_adc_cali_enabled_chan0(void);
 bool is_adc_cali_enabled_chan1(void);
-//getter functions for SPI BME handles
+//getter functions for BME680 handles
 bme680_sensor_t* get_bme_dev_handle(void);
 //ov3660 camera getter functions
 //no need for getter in this lib implemenetation
 //Power led getter functions
+//no need for getter in this lib implemenetation
+//getter functions for LIS3DH handles
+lis3dh_sensor_t* get_lis3dh_dev_handle(void);
 
 /*USEFUL DEFINITIONS*/
 // I2C address

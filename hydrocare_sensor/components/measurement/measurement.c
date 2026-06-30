@@ -76,6 +76,19 @@ static void readMultiple(spi_device_handle_t spi, uint8_t startReg, uint8_t *buf
     // mlx90641_clear_new_data_bit(&myIRcam);
 }*/
 
+
+
+lis3dh_float_data_t* measureLIS3DH()
+{
+    lis3dh_float_data_t* results = malloc(sizeof(lis3dh_float_data_t));
+    if (lis3dh_new_data (get_lis3dh_dev_handle()) &&
+        lis3dh_get_float_data (get_lis3dh_dev_handle(), results)) {
+            return results;
+    }
+    free(results);
+    return NULL;
+}
+
 void set_led_brightness(uint8_t brightness_pct) {
   // 1. Sanity check/clamp the percentage input
   if (brightness_pct > 100) {
@@ -115,11 +128,6 @@ void get_ov3660_image(uint16_t* currentData)
   }
 }
 
-void read_bme680_chip_id(){
-    uint8_t chip_id; 
-    bme680_read_reg(get_bme_dev_handle(), BME680_REG_ID, &chip_id, 1);
-    ESP_LOGI(TAG, "BME680 Chip ID: 0x%02X", chip_id);
-}
 bme680_values_float_t* measureBME680()
 {
     bme680_values_float_t* results = malloc(sizeof(bme680_values_float_t));

@@ -10,13 +10,13 @@ static const char *TAG = "MAIN";
 
 void app_main(void) {
   initPeripherals();
-  uint16_t* imageData = malloc(CROP_SIZE * CROP_SIZE * sizeof(uint16_t)); // Buffer for the cropped image
-  get_ov3660_image(imageData);
-  ESP_LOGI(TAG, "Image captured and cropped to %dx%d", CROP_SIZE, CROP_SIZE);
-  ESP_LOGI(TAG, "First pixel value: 0x%04X", imageData[0]);
-  ESP_LOGI(TAG, "Last pixel value: 0x%04X", imageData[CROP_SIZE * CROP_SIZE - 1]);
-  ESP_LOGI(TAG, "Middle pixel value: 0x%04X", imageData[(CROP_SIZE * CROP_SIZE) / 2]);
-  free(imageData); // Free the allocated memory for the image buffer
+  lis3dh_float_data_t* lis3dh_data = measureLIS3DH();
+  if (lis3dh_data) {
+    ESP_LOGI(TAG, "LIS3DH Data - X: %.2f, Y: %.2f, Z: %.2f", lis3dh_data->x, lis3dh_data->y, lis3dh_data->z);
+    free(lis3dh_data);
+  } else {
+    ESP_LOGE(TAG, "Failed to read data from LIS3DH sensor");
+  } 
   //powerLEDInit();
   //initSPIComm();
   //// Start background tasks

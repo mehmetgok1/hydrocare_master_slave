@@ -1,4 +1,6 @@
 #include "config.h"
+#include "esp_attr.h"
+#include "lis3dh_types.h"
 
 #define fw_version  "0.0.14"
 // Static handles for the ADC driver and calibration to encapsulate them within this file.
@@ -219,36 +221,21 @@ void initLIS3DH()
     };
     ESP_ERROR_CHECK(spi_bus_add_device(SPI3_HOST, &devcfg, &spi_lis3dh_handle));
     lis3dh_sensor=lis3dh_init_sensor(1,  0, Acc_CS,&spi_lis3dh_handle);
+    lis3dh_config_hpf (lis3dh_sensor, lis3dh_hpf_normal, 0, true, true, true, true);
+    lis3dh_get_hpf_ref (lis3dh_sensor);
+    // enable ADC inputs and temperature sensor for ADC input 3
+    lis3dh_enable_adc (lis3dh_sensor, true, true);
+    // LAST STEP: Finally set scale and mode to start measurements
+    lis3dh_set_scale(lis3dh_sensor, lis3dh_scale_2_g);
+    lis3dh_set_mode (lis3dh_sensor, lis3dh_odr_10, lis3dh_high_res, true, true, true);
 
-
-    //delay(100); 
-    //uint8_t who = readRegister(WHO_AM_I);
-    //Serial.print("WHO_AM_I: 0x");
-    //Serial.println(who, HEX); // Should print 0x33  
-    //// 100 Hz, all axes enabled
-    //writeRegister(CTRL_REG1, 0x57); 
-    //// ±2g, High resolution
-    //writeRegister(CTRL_REG4, 0x08); 
-    //  // 100 Hz, all axes enabled
-    //who = readRegister(CTRL_REG1);
-    //Serial.print("WHO_AM_I: 0x");
-    //Serial.println(who, HEX); // Should print 0x33
-    //who = readRegister(CTRL_REG4);
-    //Serial.print("WHO_AM_I: 0x");
-    //Serial.println(who, HEX); // Should print 0x33
-//
-    //// Give sensor time to stabilize after configuration
-    //delay(150);  // LIS3DH needs time to start outputting valid data
-//
-    //// Test initial read to verify sensor is outputting data
-    //readAcceleration();
-    //Serial.printf("Initial accel - X:%.3f Y:%.3f Z:%.3f\n", ax, ay, az);
-    //spi.endTransaction();
-
-  // Keep SPI open for continuous sensor operation
 }
-
 /* GETTER FUNCTIONS FOR HANDLERS ETC. */
+
+lis3dh_sensor_t* get_lis3dh_dev_handle(void)
+{
+    return lis3dh_sensor;
+}
 
 bme680_sensor_t* get_bme_dev_handle(void)
 {

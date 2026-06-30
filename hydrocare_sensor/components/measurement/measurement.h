@@ -12,7 +12,6 @@
 //void measureIRTemp();
 
 //bme680 calls
-void read_bme680_chip_id();
 bme680_values_float_t* measureBME680();
 
 //ov3660 camera calls
@@ -20,9 +19,12 @@ void get_ov3660_image(uint16_t* currentData);
 
 //power led calls
 void set_led_brightness(uint8_t brightness_pct);
+
 //IR led calls
 void set_ir_led(bool status);
 
+//lis3dh calls
+lis3dh_float_data_t* measureLIS3DH();
 
 
 /*DEFINITIONS*/
