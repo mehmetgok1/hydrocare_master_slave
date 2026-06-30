@@ -1,114 +1,13 @@
-/*
- * Driver for LIS3DH 3-axes digital accelerometer connected to I2C or SPI.
- *
- * This driver is for the usage with the ESP8266 and FreeRTOS (esp-open-rtos)
- * [https://github.com/SuperHouse/esp-open-rtos]. It is also working with ESP32
- * and ESP-IDF [https://github.com/espressif/esp-idf.git] as well as Linux
- * based systems using a wrapper library for ESP8266 functions.
- *
- * ---------------------------------------------------------------------------
- *
- * The BSD License (3-clause license)
- *
- * Copyright (c) 2017 Gunar Schorcht (https://github.com/gschorcht)
- * All rights reserved.
- *
- * Redistribution and use in source and binary forms, with or without
- * modification, are permitted provided that the following conditions are met:
- *
- * 1. Redistributions of source code must retain the above copyright notice,
- * this list of conditions and the following disclaimer.
- *
- * 2. Redistributions in binary form must reproduce the above copyright
- * notice, this list of conditions and the following disclaimer in the
- * documentation and/or other materials provided with the distribution.
- *
- * 3. Neither the name of the copyright holder nor the names of its
- * contributors may be used to endorse or promote products derived from this
- * software without specific prior written permission.
- *
- * THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
- * AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
- * IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
- * ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
- * LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
- * CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
- * SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
- * INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
- * CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
- * ARISING IN ANY WAY OUT OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE
- * POSSIBILITY OF SUCH DAMAGE.
- *
- * The information provided is believed to be accurate and reliable. The
- * copyright holder assumes no responsibility for the consequences of use
- * of such information nor for any infringement of patents or other rights
- * of third parties which may result from its use. No license is granted by
- * implication or otherwise under any patent or patent rights of the copyright
- * holder.
- */
-
 #include <string.h>
 #include <stdlib.h>
 
 #include "lis3dh.h"
 
-#if defined(LIS3DH_DEBUG_LEVEL_2)
-#define debug(s, f, ...) printf("%s %s: " s "\n", "LIS3DH", f, ## __VA_ARGS__)
-#define debug_dev(s, f, d, ...) printf("%s %s: bus %d, addr %02x - " s "\n", "LIS3DH", f, d->bus, d->addr, ## __VA_ARGS__)
-#else
+
 #define debug(s, f, ...)
 #define debug_dev(s, f, d, ...)
-#endif
-
-#if defined(LIS3DH_DEBUG_LEVEL_1) || defined(LIS3DH_DEBUG_LEVEL_2)
-#define error(s, f, ...) printf("%s %s: " s "\n", "LIS3DH", f, ## __VA_ARGS__)
-#define error_dev(s, f, d, ...) printf("%s %s: bus %d, addr %02x - " s "\n", "LIS3DH", f, d->bus, d->addr, ## __VA_ARGS__)
-#else
 #define error(s, f, ...)
 #define error_dev(s, f, d, ...)
-#endif
-
-// register addresses
-#define LIS3DH_REG_STATUS_AUX    0x07
-#define LIS3DH_REG_OUT_ADC1_L    0x08
-#define LIS3DH_REG_OUT_ADC1_H    0x09
-#define LIS3DH_REG_OUT_ADC2_L    0x0a
-#define LIS3DH_REG_OUT_ADC2_H    0x0b
-#define LIS3DH_REG_OUT_ADC3_L    0x0c
-#define LIS3DH_REG_OUT_ADC3_H    0x0d
-#define LIS3DH_REG_INT_COUNTER   0x0e
-#define LIS3DH_REG_WHO_AM_I      0x0f
-#define LIS3DH_REG_TEMP_CFG      0x1f
-#define LIS3DH_REG_CTRL1         0x20
-#define LIS3DH_REG_CTRL2         0x21
-#define LIS3DH_REG_CTRL3         0x22
-#define LIS3DH_REG_CTRL4         0x23
-#define LIS3DH_REG_CTRL5         0x24
-#define LIS3DH_REG_CTRL6         0x25
-#define LIS3DH_REG_REFERENCE     0x26
-#define LIS3DH_REG_STATUS        0x27
-#define LIS3DH_REG_OUT_X_L       0x28
-#define LIS3DH_REG_OUT_X_H       0x29
-#define LIS3DH_REG_OUT_Y_L       0x2a
-#define LIS3DH_REG_OUT_Y_H       0x2b
-#define LIS3DH_REG_OUT_Z_L       0x2c
-#define LIS3DH_REG_OUT_Z_H       0x2d
-#define LIS3DH_REG_FIFO_CTRL     0x2e
-#define LIS3DH_REG_FIFO_SRC      0x2f
-#define LIS3DH_REG_INT1_CFG      0x30
-#define LIS3DH_REG_INT1_SRC      0x31
-#define LIS3DH_REG_INT1_THS      0x32
-#define LIS3DH_REG_INT1_DUR      0x33
-#define LIS3DH_REG_INT2_CFG      0x34
-#define LIS3DH_REG_INT2_SRC      0x35
-#define LIS3DH_REG_INT2_THS      0x36
-#define LIS3DH_REG_INT2_DUR      0x37
-#define LIS3DH_REG_CLICK_CFG     0x38
-#define LIS3DH_REG_CLICK_SRC     0x39
-#define LIS3DH_REG_CLICK_THS     0x3a
-#define LIS3DH_REG_TIME_LIMIT    0x3b
-#define LIS3DH_REG_TIME_LATENCY  0x3c
-#define LIS3DH_REG_TIME_WINDOW   0x3d
 
 // register structure definitions
 struct lis3dh_reg_status 
@@ -122,8 +21,6 @@ struct lis3dh_reg_status
     uint8_t ZOR   :1;      // STATUS<6>   Z axis data overrun
     uint8_t ZYXOR :1;      // STATUS<7>   X, Y and Z axis data overrun
 };
-
-#define LIS3DH_ANY_DATA_READY    0x0f    // LIS3DH_REG_STATUS<3:0>
 
 struct lis3dh_reg_ctrl1 
 {
@@ -246,8 +143,6 @@ struct lis3dh_reg_click_cfg
 static bool    lis3dh_reset       (lis3dh_sensor_t* dev);
 static bool    lis3dh_is_available(lis3dh_sensor_t* dev);
 
-static bool    lis3dh_i2c_read    (lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len);
-static bool    lis3dh_i2c_write   (lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len);
 static bool    lis3dh_spi_read    (lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len);
 static bool    lis3dh_spi_write   (lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len);
 
