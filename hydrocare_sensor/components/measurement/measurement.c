@@ -74,7 +74,6 @@ bool read_thermal_matrix_frame(float* mlx90641Frame, float* Tamb) {
         ESP_LOGE("MEASUREMENT", "Error getting frame data from MLX90641");
         return false;
     }
-    ESP_LOGI("MEASUREMENT", "data read from MLX90641: first pixel=0x%04X, last pixel=0x%04X", mlx90641FrameData[0], mlx90641FrameData[191]);
     // 4. Calculate the ambient temperature of the sensor body first
     *Tamb = MLX90641_GetTa(mlx90641FrameData, get_mlx90641_params()) - 8.0;
     // 5. Calculate the real temperatures for all 192 individual pixels!

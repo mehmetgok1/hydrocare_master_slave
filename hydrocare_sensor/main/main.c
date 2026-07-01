@@ -7,15 +7,23 @@ void app_main(void) {
   initPeripherals();
 
   //start slave spi
-  //initSPIComm();
-//
-  //// Start background tasks
-  //setup_timer();
-  //startHighSpeedSamplerTask();
-  //startMeasurementTask();
-  //initIRSamplerTask();
-  //vTaskDelay(pdMS_TO_TICKS(50));  // Allow tasks to initialize
-  ESP_LOGI(TAG, "✓ All background tasks started");
+  initSPIComm();
+
+  // Start background tasks
+  setup_timer();
+  startHighSpeedSamplerTask();
+  startMeasurementTask();
+  initIRSamplerTask();
+  vTaskDelay(pdMS_TO_TICKS(50));  // Allow tasks to initialize
+  
+  while (1) {
+    receiveCommand();
+  }
+}
+/*
+
+
+ESP_LOGI(TAG, "✓ All background tasks started");
   float *thermal_frame =malloc(192 * sizeof(float));
   float tamb;
   bool status = false;
@@ -31,7 +39,4 @@ void app_main(void) {
     }
     vTaskDelay(pdMS_TO_TICKS(1000));
   }
-  while (1) {
-    receiveCommand();
-  }
-}
+*/

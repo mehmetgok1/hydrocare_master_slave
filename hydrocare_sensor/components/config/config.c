@@ -279,12 +279,6 @@ void initIRTemp()
         return;
     }
     // 1. Signed/Unsigned Integers
-    ESP_LOGI("IR_TEMP", "kVdd: %d, vdd25: %d", mlx90641_params.kVdd, mlx90641_params.vdd25);
-    ESP_LOGI("IR_TEMP", "gainEE: %d, vPTAT25: %u", mlx90641_params.gainEE, mlx90641_params.vPTAT25);
-    // 5. Status Flags
-    ESP_LOGI("IR_TEMP", "Broken Pixel Flag: 0x%04X", mlx90641_params.brokenPixel);
-
-    ESP_LOGI("IR_TEMP", "--- ------------------------------- ---");
     free(eeMLX90641);
     ESP_LOGI("IR_TEMP", "Initialization successful. eeMLX90641 heap memory has been safely freed.");
 }
