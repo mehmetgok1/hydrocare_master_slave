@@ -214,10 +214,8 @@ void setup_timer() {
 
 static void highSpeedSamplerTask(void *pvParameters) {
     ESP_LOGI(TAG, "HighSpeedSampler Task Started");
-  int64_t sample_start_us = 0;
 
     while (1) {
-        // Block indefinitely until the 500us timer releases the semaphore
         if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
             /* Fine-grained timing to isolate which stage causes overruns */
             int64_t t0 = esp_timer_get_time();
@@ -234,25 +232,23 @@ static void highSpeedSamplerTask(void *pvParameters) {
             ringBufferIndex = (ringBufferIndex + 1) % RING_BUFFER_SIZE;
             taskEXIT_CRITICAL(&samplerMux);
             int64_t t3 = esp_timer_get_time();
-
             int64_t mic_us = t1 - t0;
             int64_t lis_us = t2 - t1;
             int64_t crit_us = t3 - t2;
             int64_t total_us = t3 - t0;
-
             static uint32_t sampler_overrun_count = 0;
+            static uint32_t sampler_sample_count = 0;
+            sampler_sample_count++;
             if (total_us > 500) {
-                sampler_overrun_count++;
-                if (debug_code || (sampler_overrun_count % 50 == 0)) {
-                    ESP_LOGW(TAG, "HighSpeedSampler overrun: %lld us (mic=%lld, lis=%lld, crit=%lld) total_overruns=%u",
-                             total_us, mic_us, lis_us, crit_us, sampler_overrun_count);
-                }
+              sampler_overrun_count++;
+              if (debug_code || (sampler_overrun_count % 50 == 0)) {
+                ESP_LOGW(TAG, "HighSpeedSampler overrun: %lld us (mic=%lld, lis=%lld, crit=%lld) total_overruns=%u",
+                     total_us, mic_us, lis_us, crit_us, sampler_overrun_count);
+              }
             }
         }
     }
 }
-
-
 // ============ Main SPI Command Handler - Address-Based Protocol ============
 void receiveCommand() {
   // ===== STEP 1: EXECUTE SINGLE TRANSACTION (BLOCKING) =====
