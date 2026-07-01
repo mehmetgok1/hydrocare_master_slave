@@ -1,4 +1,5 @@
 #include "config.h"
+#include "MLX90641_API.h"
 #include "esp_attr.h"
 #include "lis3dh.h"
 #include "lis3dh_types.h"
@@ -280,6 +281,9 @@ void initIRTemp()
     }
     // 1. Signed/Unsigned Integers
     free(eeMLX90641);
+    MLX90641_SetRefreshRate(0x33, 5);
+    int a= MLX90641_GetRefreshRate(0x33);
+    ESP_LOGI("IR_TEMP", "MLX90641 Refresh Rate: %d Hz", a);
     ESP_LOGI("IR_TEMP", "Initialization successful. eeMLX90641 heap memory has been safely freed.");
 }
 /* GETTER FUNCTIONS FOR HANDLERS ETC. */

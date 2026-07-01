@@ -7,7 +7,7 @@ static const char *TAG = "SPI_COMM";
 
 // Global SPI transaction (initialized once, reused for all transactions)
 static spi_slave_transaction_t slaveSpiTransaction = {};
-bool debug_code=true;
+bool debug_code=false;
 // Global sensor data
 static SensorDataPacket currentData = {0};
 static int16_t accelX_ring[RING_BUFFER_SIZE] = {0};
