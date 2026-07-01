@@ -137,7 +137,9 @@ void collectMeasurementData() {
   taskENTER_CRITICAL(&mlxMux);
   int read_idx = 1 - mlx_write_idx;
   taskEXIT_CRITICAL(&mlxMux);
-  memcpy(currentData.irFrame, mlx_frame_buf[read_idx], sizeof(uint16_t) * 192);
+  for (int i = 0; i < 192; i++) {
+    currentData.irFrame[i] = (uint16_t)((mlx_frame_buf[read_idx][i] + 40.0f) * 100.0f);
+  }
   currentData.temperature = mlx_frame_temp[read_idx];
   
   // 3.5 BME688 Environment Data - GRAB FROM CACHE (background task updates every 200ms)
@@ -233,13 +235,16 @@ static void irSamplerTask(void *pvParameters) {
     int write_idx = 1 - mlx_write_idx; // write to the back buffer
     float temp = 0.0f;
     // Read thermal frame into back buffer
-    read_thermal_matrix_frame(mlx_frame_buf[write_idx], &temp);
-    mlx_frame_temp[write_idx] = temp;
-    ESP_LOGI(TAG, "IR Sampler: Frame written to buffer %d, Temp=%.2f°C", write_idx, temp);
-    // Publish the newly written buffer index atomically
-    taskENTER_CRITICAL(&mlxMux);
-    mlx_write_idx = write_idx;
-    taskEXIT_CRITICAL(&mlxMux);
+    if (read_thermal_matrix_frame(mlx_frame_buf[write_idx], &temp)) {
+      mlx_frame_temp[write_idx] = temp;
+      ESP_LOGI(TAG, "IR Sampler: Frame written to buffer %d, Temp=%.2f°C", write_idx, temp);
+      // Publish the newly written buffer index atomically
+      taskENTER_CRITICAL(&mlxMux);
+      mlx_write_idx = write_idx;
+      taskEXIT_CRITICAL(&mlxMux);
+    } else {
+      ESP_LOGW(TAG, "IR Sampler: MLX90641 frame read failed, keeping last good buffer");
+    }
 
     // Wait for the next cycle, ensuring a fixed 100ms period.
     vTaskDelayUntil(&xLastWakeTime, xFrequency);

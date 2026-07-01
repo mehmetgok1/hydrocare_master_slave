@@ -29,7 +29,7 @@ void MLX90641_I2CInit()
     i2c_device_config_t dev_cfg = {
         .dev_addr_length = I2C_ADDR_BIT_LEN_7,
         .device_address = 0x33, 
-        .scl_speed_hz = 100000, // 100kHz Standard Mode is used here
+        .scl_speed_hz = 400000, // 400kHz Fast Mode is used here
     };
 
     esp_err_t err = i2c_master_bus_add_device(i2c0_bus_hdl, &dev_cfg, &mlx90641_dev_hdl);
