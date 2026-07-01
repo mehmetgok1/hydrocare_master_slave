@@ -223,19 +223,25 @@ void setup_timer() {
 // ============ IR Sampler Task (double-buffered, runs every 100ms) ============
 static void irSamplerTask(void *pvParameters) {
   (void) pvParameters;
+  TickType_t xLastWakeTime;
+  const TickType_t xFrequency = pdMS_TO_TICKS(100);
+
+  // Initialise the xLastWakeTime variable with the current time.
+  xLastWakeTime = xTaskGetTickCount();
   while (1) {
     int write_idx = 1 - mlx_write_idx; // write to the back buffer
     float temp = 0.0f;
     // Read thermal frame into back buffer
     read_thermal_matrix_frame(mlx_frame_buf[write_idx], &temp);
     mlx_frame_temp[write_idx] = temp;
+    ESP_LOGI(TAG, "IR Sampler: Frame written to buffer %d, Temp=%.2f°C", write_idx, temp);
     // Publish the newly written buffer index atomically
     taskENTER_CRITICAL(&mlxMux);
     mlx_write_idx = write_idx;
     taskEXIT_CRITICAL(&mlxMux);
 
-    // Sleep for 100ms
-    vTaskDelay(pdMS_TO_TICKS(100));
+    // Wait for the next cycle, ensuring a fixed 100ms period.
+    vTaskDelayUntil(&xLastWakeTime, xFrequency);
   }
 }
 

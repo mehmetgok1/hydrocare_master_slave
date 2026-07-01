@@ -5,7 +5,6 @@
 static const char *TAG = "MEASUREMENT";
 
 //ircam
-static uint16_t mlx90641FrameData [192] = {0};  // Temporary storage for raw IR frame data (16x12=192 pixels)
 
 bool measureAmbLight(uint16_t* ambLight)
 {
@@ -61,9 +60,10 @@ bool measureMicrophone(uint16_t* mic_result)
     *mic_result = (uint16_t)voltage_mv2;
     return true; // Return true on success
 }
+static uint16_t mlx90641FrameData[242]; // MLX90641 raw frame buffer
 
 bool read_thermal_matrix_frame(float* mlx90641Frame, float* Tamb) {
-
+    // EEPROM data for MLX90641
     if (mlx90641Frame == NULL) {
         ESP_LOGE("MEASUREMENT", "Heap allocation failed for thermal frame processing!");
         return false;
@@ -74,11 +74,11 @@ bool read_thermal_matrix_frame(float* mlx90641Frame, float* Tamb) {
         ESP_LOGE("MEASUREMENT", "Error getting frame data from MLX90641");
         return false;
     }
+    ESP_LOGI("MEASUREMENT", "data read from MLX90641: first pixel=0x%04X, last pixel=0x%04X", mlx90641FrameData[0], mlx90641FrameData[191]);
     // 4. Calculate the ambient temperature of the sensor body first
-    *Tamb = MLX90641_GetTa(mlx90641FrameData, get_mlx90641_params()) - 8.0; 
+    *Tamb = MLX90641_GetTa(mlx90641FrameData, get_mlx90641_params()) - 8.0;
     // 5. Calculate the real temperatures for all 192 individual pixels!
     MLX90641_CalculateTo(mlx90641FrameData, get_mlx90641_params(), 0.95, *Tamb, mlx90641Frame);
-
     return true;
 }
 
