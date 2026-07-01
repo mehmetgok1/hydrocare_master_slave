@@ -6,17 +6,19 @@ static const char *TAG = "MEASUREMENT";
 
 //ircam
 static uint16_t mlx90641FrameData [192] = {0};  // Temporary storage for raw IR frame data (16x12=192 pixels)
-//ambient
-static int raw = 0;
-static int voltage_mv = 0;
-//microphone
-static int raw2 = 0;
-static int voltage_mv2 = 0;
 
 bool measureAmbLight(uint16_t* ambLight)
 {
+  int raw = 0;
+  int voltage_mv = 0;
+  SemaphoreHandle_t adcMutex = get_adc_mutex();
+  if (!adcMutex || xSemaphoreTake(adcMutex, portMAX_DELAY) != pdTRUE) {
+    ESP_LOGE("MEASUREMENT", "ADC mutex unavailable for ambient light read!");
+    return false;
+  }
     // 1. Read the raw 12-bit value once
     esp_err_t err = adc_oneshot_read(get_adc1_handle(), ADC_CHANNEL_0, &raw);
+  xSemaphoreGive(adcMutex);
     if (err != ESP_OK) {
         ESP_LOGE("MEASUREMENT", "Failed to read raw ADC1 Channel 0 value!");
         return false; // Return false on failure instead of breaking
@@ -35,8 +37,16 @@ bool measureAmbLight(uint16_t* ambLight)
 
 bool measureMicrophone(uint16_t* mic_result)
 {
+  int raw2 = 0;
+  int voltage_mv2 = 0;
+  SemaphoreHandle_t adcMutex = get_adc_mutex();
+  if (!adcMutex || xSemaphoreTake(adcMutex, portMAX_DELAY) != pdTRUE) {
+    ESP_LOGE("MEASUREMENT", "ADC mutex unavailable for microphone read!");
+    return false;
+  }
 
     esp_err_t err = adc_oneshot_read(get_adc1_handle(), ADC_CHANNEL_1, &raw2);
+  xSemaphoreGive(adcMutex);
     if (err != ESP_OK) {
         ESP_LOGE("MEASUREMENT", "Failed to read raw ADC1 Channel 1 value!");
         return false; // Return 0 (False) on failure

@@ -6,6 +6,7 @@
 #define fw_version  "0.0.14"
 // Static handles for the ADC driver and calibration to encapsulate them within this file.
 static adc_oneshot_unit_handle_t adc1_handle;
+static SemaphoreHandle_t adc_mutex = NULL;
 static adc_cali_handle_t adc1_cali_handle_chan0 = NULL;
 static adc_cali_handle_t adc1_cali_handle_chan1 = NULL;
 static bool adc_cali_enabled_chan0 = false;
@@ -105,6 +106,12 @@ static bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_att
 }
 void init_adc_peripheral()
 {
+    adc_mutex = xSemaphoreCreateMutex();
+    if (!adc_mutex) {
+        ESP_LOGE(TAG, "Failed to create ADC mutex");
+        while (1) vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
     // ===== Initialize ADC1 for One-Shot Mode =====
     adc_oneshot_unit_init_cfg_t init_config1 = {
         .unit_id = ADC_UNIT_1,
@@ -297,6 +304,11 @@ bme680_sensor_t* get_bme_dev_handle(void)
 adc_oneshot_unit_handle_t get_adc1_handle(void)
 {
     return adc1_handle;
+}
+
+SemaphoreHandle_t get_adc_mutex(void)
+{
+    return adc_mutex;
 }
 
 adc_cali_handle_t get_adc1_cali_handle_chan0(void)

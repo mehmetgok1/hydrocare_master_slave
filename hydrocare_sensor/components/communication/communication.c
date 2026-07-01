@@ -31,19 +31,28 @@ static SlaveState slaveState = STATE_IDLE;
 // ============ FreeRTOS Synchronization ============
 static EventGroupHandle_t spiEventGroup = NULL;
 static SemaphoreHandle_t currentDataMutex = NULL;
-static SemaphoreHandle_t samplerMutex = NULL;
+static portMUX_TYPE samplerMux = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t measurementTaskHandle = NULL;
 static TaskHandle_t samplerTaskHandle = NULL;
 
 // Event group bits
 #define EVENT_TRIGGER_RECEIVED (1 << 0)    // Trigger command received
 
+static void logTaskStackWatermarks(const char *label) {
+  if (measurementTaskHandle) {
+    ESP_LOGI(TAG, "%s measurement stack watermark: %u words", label, (unsigned)uxTaskGetStackHighWaterMark(measurementTaskHandle));
+  }
+  if (samplerTaskHandle) {
+    ESP_LOGI(TAG, "%s sampler stack watermark: %u words", label, (unsigned)uxTaskGetStackHighWaterMark(samplerTaskHandle));
+  }
+}
+
 
 
 // ============ Initialization ============
 void initSPIComm() {
   // Allocate DMA buffers
-  rxBuf = (uint8_t*) heap_caps_malloc(7, MALLOC_CAP_DMA);
+  rxBuf = (uint8_t*) heap_caps_malloc(SPI_BUFFER_SIZE, MALLOC_CAP_DMA);
   txBuf = (uint8_t*) heap_caps_malloc(SPI_BUFFER_SIZE, MALLOC_CAP_DMA);
   
   if (!rxBuf || !txBuf) {
@@ -52,7 +61,7 @@ void initSPIComm() {
   }
   
   // Clear initial buffers
-  memset(rxBuf, 0, 7);
+  memset(rxBuf, 0, SPI_BUFFER_SIZE);
   memset(txBuf, 0, SPI_BUFFER_SIZE);
   memset(&currentData, 0, sizeof(SensorDataPacket));
   
@@ -83,8 +92,7 @@ void initSPIComm() {
   // Create FreeRTOS synchronization primitives
   spiEventGroup = xEventGroupCreate();
   currentDataMutex = xSemaphoreCreateMutex();
-  samplerMutex = xSemaphoreCreateMutex();
-  if (!spiEventGroup || !currentDataMutex || !samplerMutex) {
+  if (!spiEventGroup || !currentDataMutex) {
     ESP_LOGE(TAG, "Mutex/EventGroup creation failed!");
     while(1) vTaskDelay(pdMS_TO_TICKS(1000));
   }
@@ -113,7 +121,7 @@ void collectMeasurementData() {
   int endIdx = ringBufferIndex;
   int startIdx = (endIdx - 2000 + RING_BUFFER_SIZE) % RING_BUFFER_SIZE;
   // Copy 2000 consecutive samples into packet
-  xSemaphoreTake(samplerMutex, portMAX_DELAY);
+  taskENTER_CRITICAL(&samplerMux);
   for (int i = 0; i < 2000; i++) {
     int srcIdx = (startIdx + i) % RING_BUFFER_SIZE;
     currentData.accelX_samples[i] = accelX_ring[srcIdx];
@@ -121,7 +129,7 @@ void collectMeasurementData() {
     currentData.accelZ_samples[i] = accelZ_ring[srcIdx];
     currentData.microphoneSamples[i] = microphone_ring[srcIdx];
   }
-  xSemaphoreGive(samplerMutex);
+  taskEXIT_CRITICAL(&samplerMux);
   currentData.accelSampleCount = 2000;  // Full 1 second of 2kHz data
   currentData.accelX = accelX_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
   currentData.accelY = accelY_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
@@ -153,6 +161,7 @@ void collectMeasurementData() {
     ESP_LOGI(TAG, "IR[Fst:0x%04X Mid:0x%04X Last:0x%04X]", currentData.irFrame[0], currentData.irFrame[96], currentData.irFrame[191]);
     ESP_LOGI(TAG, "Seq:%d RingBufIdx:%d TxBufReady", sequenceNumber, ringBufferIndex);
   }
+    logTaskStackWatermarks("After measurement");
   // Buffer info
 }
 
@@ -182,12 +191,13 @@ static void measurementCollectorTask(void *pvParameters) {
 
 // ============ High-Speed Sampler (Callback + Task) for 2kHz Sampling ============
 
-static SemaphoreHandle_t timer_semaphore = NULL;
-
 // ISR triggered by hardware timer
 static void IRAM_ATTR timer_callback(void *arg) {
+  if (!samplerTaskHandle) {
+    return;
+  }
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    xSemaphoreGiveFromISR(timer_semaphore, &xHigherPriorityTaskWoken);
+    vTaskNotifyGiveFromISR(samplerTaskHandle, &xHigherPriorityTaskWoken);
     // If a higher-priority task was unblocked, request a context switch.
     if (xHigherPriorityTaskWoken) {
         portYIELD_FROM_ISR();
@@ -195,36 +205,48 @@ static void IRAM_ATTR timer_callback(void *arg) {
 }
 
 void setup_timer() {
-    timer_semaphore = xSemaphoreCreateBinary();
-
     const esp_timer_create_args_t timer_args = {
         .callback = &timer_callback,
         .name = "sampler_timer"
     };
 
     esp_timer_handle_t timer_handle;
-    esp_timer_create(&timer_args, &timer_handle);
+  esp_err_t ret = esp_timer_create(&timer_args, &timer_handle);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to create sampler timer: %s", esp_err_to_name(ret));
+    while (1) vTaskDelay(pdMS_TO_TICKS(1000));
+  }
     // Start the timer to trigger every 500 microseconds
-    esp_timer_start_periodic(timer_handle, 500); 
+  ret = esp_timer_start_periodic(timer_handle, 500);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to start sampler timer: %s", esp_err_to_name(ret));
+    while (1) vTaskDelay(pdMS_TO_TICKS(1000));
+  }
 }
 
 static void highSpeedSamplerTask(void *pvParameters) {
     ESP_LOGI(TAG, "HighSpeedSampler Task Started");
+  uint32_t sampleBatchCount = 0;
 
     while (1) {
         // Block indefinitely until the 500us timer releases the semaphore
-        if (xSemaphoreTake(timer_semaphore, portMAX_DELAY)) {
-          // Reset the task watchdog since this high-priority task can starve the idle task
-          xSemaphoreTake(samplerMutex, portMAX_DELAY);
-          measureMicrophone(&mic_result);  
-          measureLIS3DH(&accel_results);
-          int idx = ringBufferIndex;
-          accelX_ring[idx] = (int16_t)(accel_results.ax * 1000);
-          accelY_ring[idx] = (int16_t)(accel_results.ay * 1000);
-          accelZ_ring[idx] = (int16_t)(accel_results.az * 1000);
-          microphone_ring[idx] = mic_result;
-          xSemaphoreGive(samplerMutex);
-          ringBufferIndex = (ringBufferIndex + 1) % RING_BUFFER_SIZE;
+        if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
+            measureMicrophone(&mic_result);
+            measureLIS3DH(&accel_results);
+            taskENTER_CRITICAL(&samplerMux);
+            int idx = ringBufferIndex;
+            accelX_ring[idx] = (int16_t)(accel_results.ax * 1000);
+            accelY_ring[idx] = (int16_t)(accel_results.ay * 1000);
+            accelZ_ring[idx] = (int16_t)(accel_results.az * 1000);
+            microphone_ring[idx] = mic_result;
+            ringBufferIndex = (ringBufferIndex + 1) % RING_BUFFER_SIZE;
+            taskEXIT_CRITICAL(&samplerMux);
+
+          // Let CPU1 idle run periodically so the task watchdog can be serviced.
+          if (++sampleBatchCount >= 64) {
+            sampleBatchCount = 0;
+            vTaskDelay(pdMS_TO_TICKS(1));
+          }
         }
     }
 }
@@ -341,13 +363,14 @@ void startMeasurementTask() {
   xTaskCreatePinnedToCore(
     measurementCollectorTask,
     "MeasurementCollector",
-    8192,          // Stack size (8 KB) - generous headroom for camera + thermal library operations
+    16384,         // Stack size (16 KB) - camera, thermal, and BME calls need more headroom
     NULL,           // Parameters
     2,              // Priority (higher than high-speed sampler)
     &measurementTaskHandle,
     0               // Core 0
   );
   ESP_LOGI(TAG, "Measurement task created on Core 0");
+    logTaskStackWatermarks("After measurement task create");
 }
 
 // Start the high-speed sampler task (continuous 2kHz accel + mic sampling)
@@ -362,4 +385,5 @@ void startHighSpeedSamplerTask() {
     &samplerTaskHandle,
     1               // Core 1 (dedicated to sampling, Core 0 free for SPI + measurement)
   );
+    logTaskStackWatermarks("After sampler task create");
 }

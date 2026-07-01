@@ -18,6 +18,7 @@
 #include "lis3dh_types.h"
 #include "MLX90641_API.h"
 #include "MLX90641_I2C_Driver.h"
+#include "freertos/semphr.h"
 
 //initialization functions
 void initPeripherals();
@@ -26,6 +27,7 @@ void initPeripherals();
 
 // Getter functions for ADC handles and calibration status
 adc_oneshot_unit_handle_t get_adc1_handle(void);
+SemaphoreHandle_t get_adc_mutex(void);
 adc_cali_handle_t get_adc1_cali_handle_chan0(void);
 adc_cali_handle_t get_adc1_cali_handle_chan1(void);
 bool is_adc_cali_enabled_chan0(void);
