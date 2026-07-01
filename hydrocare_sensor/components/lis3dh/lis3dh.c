@@ -1005,12 +1005,14 @@ bool lis3dh_reg_write(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t
 #define LIS3DH_SPI_WRITE_FLAG     0x00
 #define LIS3DH_SPI_AUTO_INC_FLAG  0x40
 
+static spi_transaction_t t;
+static uint8_t tx_buf[LIS3DH_SPI_BUF_SIZE];
+static uint8_t rx_buf[LIS3DH_SPI_BUF_SIZE];
 static bool lis3dh_spi_read(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
 {
     if (len == 0 || data == NULL || dev == NULL) return false;
 
     uint32_t total_len = 1 + len; // 1 byte address + N bytes data
-    esp_rom_delay_us(50);
     // Strict boundary assessment against the buffer macro size
     if (total_len > LIS3DH_SPI_BUF_SIZE)
     {
@@ -1020,45 +1022,31 @@ static bool lis3dh_spi_read(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, ui
         return false;
     }
 
-    // CRITICAL: Use stack-allocated arrays instead of malloc()!
-    // Since LIS3DH_SPI_BUF_SIZE is small, this completely eliminates heap fragmentation
-    // and guarantees malloc won't return NULL under tight SRAM constraints.
-    uint8_t tx_buf[LIS3DH_SPI_BUF_SIZE];
-    uint8_t rx_buf[LIS3DH_SPI_BUF_SIZE];
-
     // Clear tx_buf and set the first byte to the register address 
-    // We combine with READ (0x80) and AUTO_INC (0x40) flags for multi-byte reads
     memset(tx_buf, 0x00, total_len); 
     tx_buf[0] = reg | LIS3DH_SPI_READ_FLAG | LIS3DH_SPI_AUTO_INC_FLAG;
-
-    spi_transaction_t t;
     memset(&t, 0, sizeof(t));      // Ensure the transaction struct has no garbage values
     t.length = total_len * 8;       // Total bits to transmit/receive
     t.tx_buffer = tx_buf;           
     t.rx_buffer = rx_buf;           
-
-    // Perform the high-efficiency polling transmission
-    // Replace 'spi_lis3dh_handle' with whatever your global spi_device_handle_t is named!
     esp_err_t ret = spi_device_polling_transmit(spi_lis3dh_handle2, &t);
     if (ret != ESP_OK) {
         error_dev("Could not read data from SPI", __FUNCTION__, dev);
         dev->error_code |= LIS3DH_SPI_READ_FAILED;
         return false;
     }
-
     // Copy the received data (skipping the command/address index tracking dummy byte)
     memcpy(data, rx_buf + 1, len);
 
     return true; 
 }
 
-
+static uint8_t mosi[LIS3DH_SPI_BUF_SIZE];
 static bool lis3dh_spi_write(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t len)
 {
     if (!dev || !data || len == 0) return false;
 
     uint32_t total_len = 1 + len; // 1 byte address + N bytes data
-    esp_rom_delay_us(50);
     // Check boundary safety: total packet length cannot exceed buffer size
     if (total_len > LIS3DH_SPI_BUF_SIZE)
     {
@@ -1070,9 +1058,8 @@ static bool lis3dh_spi_write(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, u
     }
 
     // Stack-allocated transmission buffer to avoid heap fragmentation
-    uint8_t mosi[LIS3DH_SPI_BUF_SIZE];
+    
     memset(mosi, 0, total_len);
-
     // For LIS3DH SPI write, Bit 7 (MSB) must be 0. 
     // We optionally keep the auto-increment flag if writing multiple continuous configuration registers.
     uint8_t addr = (reg & 0x3F) | LIS3DH_SPI_WRITE_FLAG; 

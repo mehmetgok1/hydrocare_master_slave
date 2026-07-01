@@ -75,7 +75,7 @@ bool read_thermal_matrix_frame(float* mlx90641Frame, float* Tamb) {
 
 void measureLIS3DH(lis3dh_float_data_t* accel_results)
 {
-    lis3dh_new_data (get_lis3dh_dev_handle());
+    //lis3dh_new_data (get_lis3dh_dev_handle());
     lis3dh_get_float_data (get_lis3dh_dev_handle(), accel_results);
 }
 

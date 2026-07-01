@@ -4,6 +4,8 @@
 #include "measurement.h"
 #include "driver/spi_slave.h"
 #include "esp_task_wdt.h"
+#include "esp_timer.h"
+#include "freertos/semphr.h"
 // ============ ADDRESS-BASED R/W PROTOCOL ============
 // Command byte format: [R/W bit (7) | 7-bit address (6-0)]
 #define PROTO_CMD_READ  0x80        // R/W=1 (bit 7 set)
@@ -30,6 +32,7 @@
 
 // Constants
 #define SPI_BUFFER_SIZE 25600       // 25.6KB - handles ~24.6KB packet (2k samples) + header + margin
+#define RING_BUFFER_SIZE 5000       // 5 seconds of 1kHz data
 
 // ============ DATA STRUCTURES ============
 // Sensor data packet structure with high-speed samples (~16.6KB)
@@ -56,13 +59,19 @@ typedef struct __attribute__((packed)) {
   uint16_t irFrame[192];          // IR thermal 16x12 (384 bytes)
 } SensorDataPacket;
 
+
+// State machine - simplified for new protocol
+typedef enum {
+  STATE_IDLE = 0,           // No measurement active
+  STATE_MEASURING = 1,      // Measurement in progress
+  STATE_READY_TRANSFER = 2, // Measurement complete, buffers locked, ready to send
+  STATE_ERROR = 3
+} SlaveState;
+
 // ============ FUNCTION DECLARATIONS ============
-// Initialization and communication
 void initSPIComm();
 void receiveCommand();
 void startMeasurementTask();          // Start background measurement collector task
 void startHighSpeedSamplerTask();     // Start 2kHz accel+mic sampler task
-void startIRSensorTask();             // Start background IR thermal sensor task (200ms)
-void startBMESensorTask();            // Start background BME688 sensor task (200ms)
-
+void setup_timer();                    // Setup timer for periodic tasks
 #endif

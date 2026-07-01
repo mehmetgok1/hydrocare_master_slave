@@ -3,26 +3,21 @@
 // DMA-capable buffers
 uint8_t *rxBuf;
 uint8_t *txBuf;
-static const char *TAG = "COMM";
+static const char *TAG = "SPI_COMM";
 
 // Global SPI transaction (initialized once, reused for all transactions)
 static spi_slave_transaction_t slaveSpiTransaction = {};
-static uint32_t transaction_count = 0;
 bool debug_code=false;
-// ============ High-Speed Sampling Ring Buffers (2kHz) ============
-// 5000-sample buffer = 2.5 seconds of continuous data @ 2kHz
-// Large buffer prevents race condition: sampler index always moves far ahead of read position
-#define RING_BUFFER_SIZE 5000  // 5 seconds of 1kHz data
+// Global sensor data
+static SensorDataPacket currentData = {0};
 static int16_t accelX_ring[RING_BUFFER_SIZE] = {0};
 static int16_t accelY_ring[RING_BUFFER_SIZE] = {0};
 static int16_t accelZ_ring[RING_BUFFER_SIZE] = {0};
 static uint16_t microphone_ring[RING_BUFFER_SIZE] = {0};
 volatile int ringBufferIndex = 0;  // Index for next write (no mutex needed - single writer)
 
-// Global sensor data
-static SensorDataPacket currentData = {0};
-static uint16_t sequenceNumber = 0;
 
+static uint16_t sequenceNumber = 0;
 static lis3dh_float_data_t accel_results={0};
 static bme680_values_float_t bme_results={0};
 static uint16_t mic_result=0;
@@ -31,58 +26,24 @@ static float mlx90641Frame[192] = {0};
 static float Tamb = 0;
 static uint16_t rgbFramePtr[4096] = {0};
 
-// State machine - simplified for new protocol
-typedef enum {
-  STATE_IDLE = 0,           // No measurement active
-  STATE_MEASURING = 1,      // Measurement in progress
-  STATE_READY_TRANSFER = 2, // Measurement complete, buffers locked, ready to send
-  STATE_ERROR = 3
-} SlaveState;
-
 static SlaveState slaveState = STATE_IDLE;
-static uint32_t measurementStartTime = 0;
-static uint32_t lockStartTime = 0;        // Track when lock was set (for 5-sec timeout)
 
 // ============ FreeRTOS Synchronization ============
 static EventGroupHandle_t spiEventGroup = NULL;
 static SemaphoreHandle_t currentDataMutex = NULL;
+static SemaphoreHandle_t samplerMutex = NULL;
 static TaskHandle_t measurementTaskHandle = NULL;
 static TaskHandle_t samplerTaskHandle = NULL;
-static TaskHandle_t irTaskHandle = NULL;
-static TaskHandle_t bmeTaskHandle = NULL;
+
 // Event group bits
 #define EVENT_TRIGGER_RECEIVED (1 << 0)    // Trigger command received
 
-// ============ Cached Sensor Data (Double Buffering) ============
-// IR cache structure
-typedef struct  {
-  uint16_t irFrame[192];
-  float avgTemp;
-  float Ta;
-  uint32_t timestamp;
-}IRCache;
-
-// BME cache structure
-typedef struct {
-  float temp;
-  float humidity;
-  float pressure;
-  float gas;
-  uint32_t timestamp;
-} BMECache;
-
-static IRCache irCache[2] = {0};          // Double buffer (avoid race conditions while reading)
-static BMECache bmeCache[2] = {0};        // Double buffer
-static volatile int irWriteIdx = 0;       // Background task writes to this index
-static volatile int bmeWriteIdx = 0;      // Background task writes to this index
-static SemaphoreHandle_t irCacheMutex = NULL;
-static SemaphoreHandle_t bmeCacheMutex = NULL;
 
 
 // ============ Initialization ============
 void initSPIComm() {
   // Allocate DMA buffers
-  rxBuf = (uint8_t*) heap_caps_malloc(SPI_BUFFER_SIZE, MALLOC_CAP_DMA);
+  rxBuf = (uint8_t*) heap_caps_malloc(7, MALLOC_CAP_DMA);
   txBuf = (uint8_t*) heap_caps_malloc(SPI_BUFFER_SIZE, MALLOC_CAP_DMA);
   
   if (!rxBuf || !txBuf) {
@@ -91,7 +52,7 @@ void initSPIComm() {
   }
   
   // Clear initial buffers
-  memset(rxBuf, 0, SPI_BUFFER_SIZE);
+  memset(rxBuf, 0, 7);
   memset(txBuf, 0, SPI_BUFFER_SIZE);
   memset(&currentData, 0, sizeof(SensorDataPacket));
   
@@ -122,10 +83,8 @@ void initSPIComm() {
   // Create FreeRTOS synchronization primitives
   spiEventGroup = xEventGroupCreate();
   currentDataMutex = xSemaphoreCreateMutex();
-  irCacheMutex = xSemaphoreCreateMutex();
-  bmeCacheMutex = xSemaphoreCreateMutex();
-  
-  if (!spiEventGroup || !currentDataMutex || !irCacheMutex || !bmeCacheMutex) {
+  samplerMutex = xSemaphoreCreateMutex();
+  if (!spiEventGroup || !currentDataMutex || !samplerMutex) {
     ESP_LOGE(TAG, "Mutex/EventGroup creation failed!");
     while(1) vTaskDelay(pdMS_TO_TICKS(1000));
   }
@@ -135,10 +94,6 @@ void initSPIComm() {
   slaveSpiTransaction.length    = SPI_BUFFER_SIZE * 8;
   slaveSpiTransaction.rx_buffer = rxBuf;
   slaveSpiTransaction.tx_buffer = txBuf;
-  
-  // Pre-fill permanent parts of txBuf
-  txBuf[0] = 0x00;  // Dummy byte (always 0x00)
-  txBuf[1] = 0x00;  // Status byte (updated on state changes)
   
   ESP_LOGI(TAG, "SPI Ready - Concurrent architecture with background measurement task");
 }
@@ -158,6 +113,7 @@ void collectMeasurementData() {
   int endIdx = ringBufferIndex;
   int startIdx = (endIdx - 2000 + RING_BUFFER_SIZE) % RING_BUFFER_SIZE;
   // Copy 2000 consecutive samples into packet
+  xSemaphoreTake(samplerMutex, portMAX_DELAY);
   for (int i = 0; i < 2000; i++) {
     int srcIdx = (startIdx + i) % RING_BUFFER_SIZE;
     currentData.accelX_samples[i] = accelX_ring[srcIdx];
@@ -165,6 +121,7 @@ void collectMeasurementData() {
     currentData.accelZ_samples[i] = accelZ_ring[srcIdx];
     currentData.microphoneSamples[i] = microphone_ring[srcIdx];
   }
+  xSemaphoreGive(samplerMutex);
   currentData.accelSampleCount = 2000;  // Full 1 second of 2kHz data
   currentData.accelX = accelX_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
   currentData.accelY = accelY_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
@@ -173,17 +130,14 @@ void collectMeasurementData() {
   currentData.gyroY = 0;
   currentData.gyroZ = 0;
   // 3. IR temperature frame - GRAB FROM CACHE (background task updates every 200ms)
-  xSemaphoreTake(irCacheMutex, portMAX_DELAY);
   // Read from buffer NOT being written to
-  memcpy(currentData.irFrame, irCache[1 - irWriteIdx].irFrame, sizeof(uint16_t) * 192);
-  currentData.temperature = irCache[1 - irWriteIdx].avgTemp;
-  xSemaphoreGive(irCacheMutex);
+  read_thermal_matrix_frame(mlx90641Frame, &Tamb);
+  memcpy(currentData.irFrame, mlx90641Frame, sizeof(uint16_t) * 192);
+  currentData.temperature = Tamb;
   
   // 3.5 BME688 Environment Data - GRAB FROM CACHE (background task updates every 200ms)
-  xSemaphoreTake(bmeCacheMutex, portMAX_DELAY);
-  int bmeReadIdx = 1 - bmeWriteIdx;  // Read from buffer NOT being written to
-  currentData.humidity = bmeCache[bmeReadIdx].humidity;
-  xSemaphoreGive(bmeCacheMutex);
+  measureBME680(&bme_results);
+  currentData.humidity = bme_results.humidity;
   // 4. RGB camera frame 
   get_ov2640_image(rgbFramePtr);
   memcpy(currentData.rgbFrame, rgbFramePtr, sizeof(uint16_t) * 4096);
@@ -226,95 +180,55 @@ static void measurementCollectorTask(void *pvParameters) {
   }
 }
 
-// ============ IR Sensor Background Task (Every 200ms) ============
-static void irSensorBackgroundTask(void *pvParameters) {
-  TickType_t lastWakeTime = xTaskGetTickCount();
-  while (1) {
-    vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(500));
-    if(!read_thermal_matrix_frame(mlx90641Frame, &Tamb)) {
-      ESP_LOGE(TAG, "IR Sensor Task: Failed to read thermal frame data");
-      continue;
-    }
-    float avgTemp = 0;
-    for (int i = 0; i < 192; i++) {
-      avgTemp += mlx90641Frame[i];
-    }
-    avgTemp /= 192;
-    // Write to cache with mutex protection
-    xSemaphoreTake(irCacheMutex, portMAX_DELAY);
-    // Convert temperatures to fixed-point format (+ 40 offset, *100 scale)
-    for (int i = 0; i < 192; i++) {
-      irCache[irWriteIdx].irFrame[i] = (uint16_t)((mlx90641Frame[i] + 40) * 100);
-    }
-    irCache[irWriteIdx].avgTemp = avgTemp;
-    irCache[irWriteIdx].Ta = Tamb; // Assuming myIRcam is globally accessible from its component
-    irCache[irWriteIdx].timestamp = esp_timer_get_time() / 1000;
-    // Swap write index for next iteration (double buffering)
-    irWriteIdx = 1 - irWriteIdx;
-    xSemaphoreGive(irCacheMutex);
-    taskYIELD();
-  }
-}
+// ============ High-Speed Sampler (Callback + Task) for 2kHz Sampling ============
 
-// ============ BME Sensor Background Task (Every 200ms) ============
-static void bmeSensorBackgroundTask(void *pvParameters) {
-  TickType_t lastWakeTime = xTaskGetTickCount();
-  while (1) {
-      vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(200));
-      measureBME680(&bme_results);
-      // 2. Write to cache with mutex protection
-      if (xSemaphoreTake(bmeCacheMutex, portMAX_DELAY) == pdTRUE) {
-          bmeCache[bmeWriteIdx].temp = bme_results.temperature;
-          bmeCache[bmeWriteIdx].humidity = bme_results.humidity;
-          bmeCache[bmeWriteIdx].pressure = bme_results.pressure;
-          bmeCache[bmeWriteIdx].gas = bme_results.gas_resistance;
-          bmeCache[bmeWriteIdx].timestamp = esp_timer_get_time() / 1000;
-          // Swap write index so the reader knows a new frame is ready
-          bmeWriteIdx = 1 - bmeWriteIdx;
-          xSemaphoreGive(bmeCacheMutex);
-      }
+static SemaphoreHandle_t timer_semaphore = NULL;
+
+// ISR triggered by hardware timer
+static void IRAM_ATTR timer_callback(void *arg) {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR(timer_semaphore, &xHigherPriorityTaskWoken);
+    // If a higher-priority task was unblocked, request a context switch.
+    if (xHigherPriorityTaskWoken) {
+        portYIELD_FROM_ISR();
     }
 }
 
-// ============ High-Speed Sampler Task (2kHz on Core 1) ============
+void setup_timer() {
+    timer_semaphore = xSemaphoreCreateBinary();
+
+    const esp_timer_create_args_t timer_args = {
+        .callback = &timer_callback,
+        .name = "sampler_timer"
+    };
+
+    esp_timer_handle_t timer_handle;
+    esp_timer_create(&timer_args, &timer_handle);
+    // Start the timer to trigger every 500 microseconds
+    esp_timer_start_periodic(timer_handle, 500); 
+}
+
 static void highSpeedSamplerTask(void *pvParameters) {
-  int64_t lastSampleTime_us = 0;
-  int64_t targetInterval_us = 10000;  // 2kHz = one sample every 500 microseconds
-  
-  ESP_LOGI(TAG, "HighSpeedSampler Started - Sampling accel + mic @ 2kHz (precise microsecond timing)");
-  
-  // Initialize reference time
-  lastSampleTime_us = esp_timer_get_time();
-  esp_task_wdt_add(NULL);
-  while (1) {
-    // Get current time
-    int64_t now_us = esp_timer_get_time();
-    
-    // Check if time for next sample (500µs interval)
-    if ((now_us - lastSampleTime_us) >= targetInterval_us) {
-      lastSampleTime_us = now_us;
-      // Read microphone (ADC - very fast ~10µs)
-      if(!measureMicrophone(&mic_result)) {
-        ESP_LOGE(TAG, "Failed to read microphone data in high-speed sampler");
-        continue;  // Skip this sample if failed
-      }
-      // Read acceleration (FSPI - ~200µs)
-      measureLIS3DH(&accel_results);      
-      // Store in ring buffer (atomic write, single writer)
-      int idx = ringBufferIndex;
-      accelX_ring[idx] = (int16_t)(accel_results.ax * 1000);
-      accelY_ring[idx] = (int16_t)(accel_results.ay * 1000);
-      accelZ_ring[idx] = (int16_t)(accel_results.az * 1000);
-      microphone_ring[idx] = mic_result;
-      // Advance ring buffer index
-      ringBufferIndex = (ringBufferIndex + 1) % RING_BUFFER_SIZE;
-      esp_task_wdt_reset();
+    ESP_LOGI(TAG, "HighSpeedSampler Task Started");
+
+    while (1) {
+        // Block indefinitely until the 500us timer releases the semaphore
+        if (xSemaphoreTake(timer_semaphore, portMAX_DELAY)) {
+          // Reset the task watchdog since this high-priority task can starve the idle task
+          xSemaphoreTake(samplerMutex, portMAX_DELAY);
+          measureMicrophone(&mic_result);  
+          measureLIS3DH(&accel_results);
+          int idx = ringBufferIndex;
+          accelX_ring[idx] = (int16_t)(accel_results.ax * 1000);
+          accelY_ring[idx] = (int16_t)(accel_results.ay * 1000);
+          accelZ_ring[idx] = (int16_t)(accel_results.az * 1000);
+          microphone_ring[idx] = mic_result;
+          xSemaphoreGive(samplerMutex);
+          ringBufferIndex = (ringBufferIndex + 1) % RING_BUFFER_SIZE;
+        }
     }
-    // Yield to allow other tasks to run (watchdog, SPI handler, etc)
-    // This prevents starving the whole system
-    taskYIELD();
-  }
 }
+
 
 // ============ Main SPI Command Handler - Address-Based Protocol ============
 void receiveCommand() {
@@ -333,7 +247,6 @@ void receiveCommand() {
     }
   }
   // ===== STEP 2: PROCESS RECEIVED COMMAND =====
-  transaction_count++;
   uint8_t cmdByte = rxBuf[0];
   uint8_t isRead = (cmdByte & PROTO_CMD_READ) ? 1 : 0;
   uint8_t address = cmdByte & PROTO_ADDR_MASK;
@@ -428,7 +341,7 @@ void startMeasurementTask() {
   xTaskCreatePinnedToCore(
     measurementCollectorTask,
     "MeasurementCollector",
-    28672,          // Stack size (28 KB) - generous headroom for camera + thermal library operations
+    8192,          // Stack size (8 KB) - generous headroom for camera + thermal library operations
     NULL,           // Parameters
     2,              // Priority (higher than high-speed sampler)
     &measurementTaskHandle,
@@ -437,46 +350,16 @@ void startMeasurementTask() {
   ESP_LOGI(TAG, "Measurement task created on Core 0");
 }
 
-// Start the high-speed sampler task (continuous 1kHz accel + mic sampling)
+// Start the high-speed sampler task (continuous 2kHz accel + mic sampling)
 void startHighSpeedSamplerTask() {
-  
+  // 1. Create the high-priority task that will perform the sampling
   xTaskCreatePinnedToCore(
     highSpeedSamplerTask,
     "HighSpeedSampler",
     16384,          // Stack size (16 KB - safe for SPI + ADC operations)
     NULL,           // Parameters
-    1,              // Priority (low - won't interfere with SPI handler)
+    0,            // High priority to ensure timely sampling
     &samplerTaskHandle,
     1               // Core 1 (dedicated to sampling, Core 0 free for SPI + measurement)
   );
-  ESP_LOGI(TAG, "High-speed sampler task created on Core 1 @ 2kHz");
-}
-
-// Start the IR sensor background task (continuous 200ms sampling with caching)
-void startIRSensorTask() {
-  xTaskCreatePinnedToCore(
-    irSensorBackgroundTask,
-    "IRSensorTask",
-    8192,           // Stack size (8 KB - sufficient for MLX90641 library)
-    NULL,           // Parameters
-    1,              // Priority (same as sampler, won't interfere with measurement)
-    &irTaskHandle,
-    1               // Core 1 (background caching task)
-  );
-  ESP_LOGI(TAG, "IR sensor task created on Core 1 @ 200ms");
-}
-
-// Start the BME sensor background task (continuous 200ms sampling with caching)
-void startBMESensorTask() {
-  xTaskCreatePinnedToCore(
-    bmeSensorBackgroundTask,
-    "BMESensorTask",
-    8192,           // Stack size (8 KB - sufficient for BME688 library)
-    NULL,           // Parameters
-    1,              // Priority (same as sampler, won't interfere with measurement)
-    &bmeTaskHandle,
-    1               // Core 1 (background caching task)
-  );
-  ESP_LOGI(TAG, "BME sensor task created on Core 1 @ 200ms");
-
 }

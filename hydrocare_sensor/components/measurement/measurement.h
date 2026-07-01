@@ -28,8 +28,6 @@ bool measureMicrophone(uint16_t* mic_result);
 // ambient light measurement function
 bool measureAmbLight(uint16_t* ambLight);
 
-
-
 /*DEFINITIONS*/
 //ov3660 definitions
 #define CROP_SIZE 64
