@@ -192,7 +192,7 @@ void collectMeasurementData() {
 
   // 4. RGB camera frame 
   uint16_t* rgbFramePtr = malloc(sizeof(uint16_t) * 4096);
-  get_ov3660_image(rgbFramePtr);
+  get_ov2640_image(rgbFramePtr);
   memcpy(currentData.rgbFrame, rgbFramePtr, sizeof(uint16_t) * 4096);
   free(rgbFramePtr);
   

@@ -128,7 +128,7 @@ void set_ir_led(bool status){
       gpio_set_level(ledCntrlIR, 0);
 }
 
-void get_ov3660_image(uint16_t* currentData)
+void get_ov2640_image(uint16_t* currentData)
 {
   camera_fb_t *fb = esp_camera_fb_get();
   if (fb) {

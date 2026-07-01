@@ -7,8 +7,8 @@
 //bme680 calls
 bme680_values_float_t* measureBME680();
 
-//ov3660 camera calls
-void get_ov3660_image(uint16_t* currentData);
+//ov2640 camera calls
+void get_ov2640_image(uint16_t* currentData);
 
 //power led calls
 void set_led_brightness(uint8_t brightness_pct);
