@@ -14,6 +14,7 @@ void app_main(void) {
   startHighSpeedSamplerTask();
   startMeasurementTask();
   initIRSamplerTask();
+  initBMESamplerTask();
   vTaskDelay(pdMS_TO_TICKS(50));  // Allow tasks to initialize
   
   while (1) {

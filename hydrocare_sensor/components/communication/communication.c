@@ -7,7 +7,7 @@ static const char *TAG = "SPI_COMM";
 
 // Global SPI transaction (initialized once, reused for all transactions)
 static spi_slave_transaction_t slaveSpiTransaction = {};
-bool debug_code=false;
+bool debug_code=true;
 // Global sensor data
 static SensorDataPacket currentData = {0};
 static int16_t accelX_ring[RING_BUFFER_SIZE] = {0};
@@ -19,7 +19,6 @@ volatile int ringBufferIndex = 0;  // Index for next write (no mutex needed - si
 
 static uint16_t sequenceNumber = 0;
 static lis3dh_float_data_t accel_results={0};
-static bme680_values_float_t bme_results={0};
 static uint16_t mic_result=0;
 static uint16_t ambLight_result=0;
 static float mlx90641Frame[192] = {0};
@@ -29,6 +28,11 @@ static float mlx_frame_buf[2][192] = { {0} };
 static float mlx_frame_temp[2] = {0, 0};
 static volatile int mlx_write_idx = 0; // index the writer last wrote to
 static portMUX_TYPE mlxMux = portMUX_INITIALIZER_UNLOCKED;
+// Double-buffer for BME680 sampling (background task writes, collector reads)
+static bme680_values_float_t bme_cache_buf[2] = { {0} };
+static volatile int bme_write_idx = 0;
+static bool bme_cache_valid = false;
+static portMUX_TYPE bmeMux = portMUX_INITIALIZER_UNLOCKED;
 static uint16_t rgbFramePtr[4096] = {0};
 
 static SlaveState slaveState = STATE_IDLE;
@@ -40,6 +44,7 @@ static portMUX_TYPE samplerMux = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t measurementTaskHandle = NULL;
 static TaskHandle_t samplerTaskHandle = NULL;
 static TaskHandle_t irTaskHandle = NULL;
+static TaskHandle_t bmeTaskHandle = NULL;
 
 // Event group bits
 #define EVENT_TRIGGER_RECEIVED (1 << 0)    // Trigger command received
@@ -104,6 +109,7 @@ void initSPIComm() {
 // ============ Measurement Collection (runs in background task) ============
 void collectMeasurementData() {
   uint64_t totalStartTime = esp_timer_get_time() / 1000;
+  int64_t tAmbientStart = esp_timer_get_time();
   // Acquire mutex before modifying currentData
   xSemaphoreTake(currentDataMutex, portMAX_DELAY);
   // 1. Ambient light (fast, ~1ms)
@@ -112,10 +118,12 @@ void collectMeasurementData() {
   }else {
     currentData.ambientLight = ambLight_result;
   }
+  int64_t tAmbientEnd = esp_timer_get_time();
   // 2. Grab high-speed accel + mic samples from ring buffer (last 2000 @ 2kHz = 1 second of data)
   int endIdx = ringBufferIndex;
   int startIdx = (endIdx - 2000 + RING_BUFFER_SIZE) % RING_BUFFER_SIZE;
   // Copy 2000 consecutive samples into packet
+  int64_t tRingStart = esp_timer_get_time();
   taskENTER_CRITICAL(&samplerMux);
   for (int i = 0; i < 2000; i++) {
     int srcIdx = (startIdx + i) % RING_BUFFER_SIZE;
@@ -125,6 +133,7 @@ void collectMeasurementData() {
     currentData.microphoneSamples[i] = microphone_ring[srcIdx];
   }
   taskEXIT_CRITICAL(&samplerMux);
+  int64_t tRingEnd = esp_timer_get_time();
   currentData.accelSampleCount = 2000;  // Full 1 second of 2kHz data
   currentData.accelX = accelX_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
   currentData.accelY = accelY_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
@@ -134,6 +143,7 @@ void collectMeasurementData() {
   currentData.gyroZ = 0;
   // 3. IR temperature frame - read from double-buffered background sampler
   // Pick the buffer not currently being written to
+  int64_t tIrStart = esp_timer_get_time();
   taskENTER_CRITICAL(&mlxMux);
   int read_idx = 1 - mlx_write_idx;
   taskEXIT_CRITICAL(&mlxMux);
@@ -141,13 +151,26 @@ void collectMeasurementData() {
     currentData.irFrame[i] = (uint16_t)((mlx_frame_buf[read_idx][i] + 40.0f) * 100.0f);
   }
   currentData.temperature = mlx_frame_temp[read_idx];
+  int64_t tIrEnd = esp_timer_get_time();
   
-  // 3.5 BME688 Environment Data - GRAB FROM CACHE (background task updates every 200ms)
-  measureBME680(&bme_results);
-  currentData.humidity = bme_results.humidity;
+  // 3.5 BME688 Environment Data - GRAB FROM CACHE (background task updates every 250ms)
+  int64_t tBmeStart = esp_timer_get_time();
+  taskENTER_CRITICAL(&bmeMux);
+  int bme_read_idx = bme_write_idx;
+  bme680_values_float_t cached_bme = bme_cache_buf[bme_read_idx];
+  bool cached_bme_valid = bme_cache_valid;
+  taskEXIT_CRITICAL(&bmeMux);
+  if (cached_bme_valid) {
+    currentData.humidity = cached_bme.humidity;
+  } else {
+    currentData.humidity = 0.0f;
+  }
+  int64_t tBmeEnd = esp_timer_get_time();
   // 4. RGB camera frame 
+  int64_t tRgbStart = esp_timer_get_time();
   get_ov2640_image(rgbFramePtr);
   memcpy(currentData.rgbFrame, rgbFramePtr, sizeof(uint16_t) * 4096);
+  int64_t tRgbEnd = esp_timer_get_time();
   // 5. Timestamp
   currentData.timestamp_ms = esp_timer_get_time() / 1000;
   // Release mutex after all updates complete
@@ -156,11 +179,47 @@ void collectMeasurementData() {
   // ===== MEASUREMENT SUMMARY WITH SENSOR DATA =====
   if(debug_code){
     ESP_LOGI(TAG, "Measurement Complete in %llu ms", elapsed);
+    ESP_LOGI(TAG, "Timing(us): ambient=%lld ring=%lld ir=%lld bme=%lld rgb=%lld total=%lld",
+             (long long)(tAmbientEnd - tAmbientStart),
+             (long long)(tRingEnd - tRingStart),
+             (long long)(tIrEnd - tIrStart),
+             (long long)(tBmeEnd - tBmeStart),
+             (long long)(tRgbEnd - tRgbStart),
+             (long long)((esp_timer_get_time() - tAmbientStart)));
     ESP_LOGI(TAG, "RGB[Fst:0x%04X Mid:0x%04X Last:0x%04X]", currentData.rgbFrame[0], currentData.rgbFrame[2048], currentData.rgbFrame[4095]);
     ESP_LOGI(TAG, "IR[Fst:0x%04X Mid:0x%04X Last:0x%04X]", currentData.irFrame[0], currentData.irFrame[96], currentData.irFrame[191]);
     ESP_LOGI(TAG, "Seq:%d RingBufIdx:%d TxBufReady", sequenceNumber, ringBufferIndex);
   }
   // Buffer info
+}
+
+// ============ BME680 Sampler Task (double-buffered, runs every 250ms) ============
+static void bmeSamplerTask(void *pvParameters) {
+  (void) pvParameters;
+  TickType_t xLastWakeTime;
+  const TickType_t xFrequency = pdMS_TO_TICKS(250);
+
+  xLastWakeTime = xTaskGetTickCount();
+  while (1) {
+    int write_idx = 1 - bme_write_idx;
+    bme680_values_float_t sample = {0};
+    int64_t t0 = esp_timer_get_time();
+    measureBME680(&sample);
+    int64_t t1 = esp_timer_get_time();
+
+    taskENTER_CRITICAL(&bmeMux);
+    bme_cache_buf[write_idx] = sample;
+    bme_write_idx = write_idx;
+    bme_cache_valid = true;
+    taskEXIT_CRITICAL(&bmeMux);
+
+    if (debug_code) {
+      ESP_LOGI(TAG, "BME Sampler: cached buffer %d in %lld us (T=%.2f C, H=%.2f %%)",
+               write_idx, (long long)(t1 - t0), sample.temperature, sample.humidity);
+    }
+
+    vTaskDelayUntil(&xLastWakeTime, xFrequency);
+  }
 }
 
 // ============ Background Measurement Task ============
@@ -237,7 +296,6 @@ static void irSamplerTask(void *pvParameters) {
     // Read thermal frame into back buffer
     if (read_thermal_matrix_frame(mlx_frame_buf[write_idx], &temp)) {
       mlx_frame_temp[write_idx] = temp;
-      ESP_LOGI(TAG, "IR Sampler: Frame written to buffer %d, Temp=%.2f°C", write_idx, temp);
       // Publish the newly written buffer index atomically
       taskENTER_CRITICAL(&mlxMux);
       mlx_write_idx = write_idx;
@@ -248,6 +306,20 @@ static void irSamplerTask(void *pvParameters) {
 
     // Wait for the next cycle, ensuring a fixed 100ms period.
     vTaskDelayUntil(&xLastWakeTime, xFrequency);
+  }
+}
+
+void initBMESamplerTask() {
+  if (!bmeTaskHandle) {
+    xTaskCreatePinnedToCore(
+      bmeSamplerTask,
+      "BMESampler",
+      4096,
+      NULL,
+      1,
+      &bmeTaskHandle,
+      0);
+    ESP_LOGI(TAG, "BME sampler task started on Core 0");
   }
 }
 

@@ -1,6 +1,6 @@
 #ifndef COMMUNICATION_H
 #define COMMUNICATION_H
-#include <inttypes.h>  
+#include <inttypes.h>
 #include "measurement.h"
 #include "driver/spi_slave.h"
 #include "esp_task_wdt.h"
@@ -47,13 +47,13 @@ typedef struct __attribute__((packed)) {
   uint32_t timestamp_ms;          // System uptime when measurement triggered
   uint8_t status;                 // Status flags
   uint16_t accelSampleCount;      // Number of accel/mic samples in this packet (2000)
-  
+
   // High-speed samples (2kHz sampling over 1 second measurement window)
   int16_t accelX_samples[2000];    // 2000 accel X samples @ 2kHz = 1 second
   int16_t accelY_samples[2000];    // 2000 accel Y samples @ 2kHz = 1 second
   int16_t accelZ_samples[2000];    // 2000 accel Z samples @ 2kHz = 1 second
   uint16_t microphoneSamples[2000];// 2000 microphone samples @ 2kHz = 1 second
-  
+
   // Slow sensor frames (camera data)
   uint16_t rgbFrame[4096];        // RGB565 64x64 (8192 bytes)
   uint16_t irFrame[192];          // IR thermal 16x12 (384 bytes)
@@ -75,4 +75,5 @@ void startMeasurementTask();          // Start background measurement collector 
 void startHighSpeedSamplerTask();     // Start 2kHz accel+mic sampler task
 void setup_timer();                    // Setup timer for periodic tasks
 void initIRSamplerTask();               // Start background IR sampler task
+void initBMESamplerTask();
 #endif
