@@ -1,4 +1,5 @@
 #include "lis3dh.h"
+#include "freertos/idf_additions.h"
 
 spi_device_handle_t spi_lis3dh_handle2;
 // register structure definitions
@@ -1009,7 +1010,7 @@ static bool lis3dh_spi_read(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, ui
     if (len == 0 || data == NULL || dev == NULL) return false;
 
     uint32_t total_len = 1 + len; // 1 byte address + N bytes data
-
+    esp_rom_delay_us(50);
     // Strict boundary assessment against the buffer macro size
     if (total_len > LIS3DH_SPI_BUF_SIZE)
     {
@@ -1057,7 +1058,7 @@ static bool lis3dh_spi_write(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, u
     if (!dev || !data || len == 0) return false;
 
     uint32_t total_len = 1 + len; // 1 byte address + N bytes data
-
+    esp_rom_delay_us(50);
     // Check boundary safety: total packet length cannot exceed buffer size
     if (total_len > LIS3DH_SPI_BUF_SIZE)
     {

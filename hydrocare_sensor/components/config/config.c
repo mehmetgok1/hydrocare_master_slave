@@ -1,5 +1,6 @@
 #include "config.h"
 #include "esp_attr.h"
+#include "lis3dh.h"
 #include "lis3dh_types.h"
 
 #define fw_version  "0.0.14"
@@ -210,7 +211,7 @@ void powerLEDInit(){
         .channel        = LEDC_CHANNEL,
         .timer_sel      = LEDC_TIMER,
         .gpio_num       = LEDC_OUTPUT_IO,
-        .duty           = 0,
+        .duty           = 1024, // Set duty to 100%. (2 ** 10) * 100% = 1024
         .hpoint         = 0
     };
     ESP_ERROR_CHECK(ledc_channel_config(&ledc_channel));
@@ -221,20 +222,19 @@ void initLIS3DH()
     // Add the LIS3DH device to the SPI bus
     spi_device_interface_config_t devcfg = {
         .command_bits = 0,
-        .clock_speed_hz = 1 * 1000 * 1000, // 1 MHz
+        .clock_speed_hz = 1 * 100 * 1000, // 400kHz
         .mode = 3, // LIS3DH uses SPI mode 3 (CPOL=1, CPHA=1)
         .spics_io_num = Acc_CS,
         .queue_size = 1,
     };
     ESP_ERROR_CHECK(spi_bus_add_device(SPI3_HOST, &devcfg, &spi_lis3dh_handle));
     lis3dh_sensor=lis3dh_init_sensor(1,  0, Acc_CS,&spi_lis3dh_handle);
-    lis3dh_config_hpf (lis3dh_sensor, lis3dh_hpf_normal, 0, true, true, true, true);
-    lis3dh_get_hpf_ref (lis3dh_sensor);
+    lis3dh_config_hpf (lis3dh_sensor, lis3dh_hpf_normal, 0, false, false, false, false);    lis3dh_get_hpf_ref (lis3dh_sensor);
     // enable ADC inputs and temperature sensor for ADC input 3
     lis3dh_enable_adc (lis3dh_sensor, true, true);
     // LAST STEP: Finally set scale and mode to start measurements
     lis3dh_set_scale(lis3dh_sensor, lis3dh_scale_2_g);
-    lis3dh_set_mode (lis3dh_sensor, lis3dh_odr_10, lis3dh_high_res, true, true, true);
+    lis3dh_set_mode (lis3dh_sensor, lis3dh_odr_5000, lis3dh_low_power, true, true, true);
 
 }
 void initI2CBus(void) {

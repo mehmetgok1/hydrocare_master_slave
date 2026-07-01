@@ -13,15 +13,23 @@ bool debug_code=false;
 // 5000-sample buffer = 2.5 seconds of continuous data @ 2kHz
 // Large buffer prevents race condition: sampler index always moves far ahead of read position
 #define RING_BUFFER_SIZE 5000  // 5 seconds of 1kHz data
-int16_t accelX_ring[RING_BUFFER_SIZE] = {0};
-int16_t accelY_ring[RING_BUFFER_SIZE] = {0};
-int16_t accelZ_ring[RING_BUFFER_SIZE] = {0};
-uint16_t microphone_ring[RING_BUFFER_SIZE] = {0};
+static int16_t accelX_ring[RING_BUFFER_SIZE] = {0};
+static int16_t accelY_ring[RING_BUFFER_SIZE] = {0};
+static int16_t accelZ_ring[RING_BUFFER_SIZE] = {0};
+static uint16_t microphone_ring[RING_BUFFER_SIZE] = {0};
 volatile int ringBufferIndex = 0;  // Index for next write (no mutex needed - single writer)
 
 // Global sensor data
 static SensorDataPacket currentData = {0};
 static uint16_t sequenceNumber = 0;
+
+static lis3dh_float_data_t accel_results={0};
+static bme680_values_float_t bme_results={0};
+static uint16_t mic_result=0;
+static uint16_t ambLight_result=0;
+static float mlx90641Frame[192] = {0};
+static float Tamb = 0;
+static uint16_t rgbFramePtr[4096] = {0};
 
 // State machine - simplified for new protocol
 typedef enum {
@@ -34,13 +42,14 @@ typedef enum {
 static SlaveState slaveState = STATE_IDLE;
 static uint32_t measurementStartTime = 0;
 static uint32_t lockStartTime = 0;        // Track when lock was set (for 5-sec timeout)
-#define LOCK_TIMEOUT_MS  5000;  // 5 seconds - auto-reset stale locks
 
 // ============ FreeRTOS Synchronization ============
 static EventGroupHandle_t spiEventGroup = NULL;
 static SemaphoreHandle_t currentDataMutex = NULL;
 static TaskHandle_t measurementTaskHandle = NULL;
-
+static TaskHandle_t samplerTaskHandle = NULL;
+static TaskHandle_t irTaskHandle = NULL;
+static TaskHandle_t bmeTaskHandle = NULL;
 // Event group bits
 #define EVENT_TRIGGER_RECEIVED (1 << 0)    // Trigger command received
 
@@ -68,8 +77,7 @@ static volatile int irWriteIdx = 0;       // Background task writes to this inde
 static volatile int bmeWriteIdx = 0;      // Background task writes to this index
 static SemaphoreHandle_t irCacheMutex = NULL;
 static SemaphoreHandle_t bmeCacheMutex = NULL;
-static TaskHandle_t irTaskHandle = NULL;
-static TaskHandle_t bmeTaskHandle = NULL;
+
 
 // ============ Initialization ============
 void initSPIComm() {
@@ -138,25 +146,18 @@ void initSPIComm() {
 // ============ Measurement Collection (runs in background task) ============
 void collectMeasurementData() {
   uint64_t totalStartTime = esp_timer_get_time() / 1000;
-  uint32_t stepTime = 0;
-  
   // Acquire mutex before modifying currentData
   xSemaphoreTake(currentDataMutex, portMAX_DELAY);
-  
   // 1. Ambient light (fast, ~1ms)
-  stepTime = esp_timer_get_time() / 1000;
-  currentData.ambientLight = *measureAmbLight();
+  if(!measureAmbLight(&ambLight_result)) {
+    ESP_LOGE(TAG, "Failed to measure ambient light!");
+  }else {
+    currentData.ambientLight = ambLight_result;
+  }
   // 2. Grab high-speed accel + mic samples from ring buffer (last 2000 @ 2kHz = 1 second of data)
-  // Calculate start index (2000 samples back from current write position)
-  // Capture endIdx FIRST - even if sampler advances during copy, we use this snapshot
-  stepTime = esp_timer_get_time() / 1000;
   int endIdx = ringBufferIndex;
   int startIdx = (endIdx - 2000 + RING_BUFFER_SIZE) % RING_BUFFER_SIZE;
-  
   // Copy 2000 consecutive samples into packet
-  // RACE CONDITION SAFE: 5000-sample buffer is large enough that sampler can't catch up
-  // While copying (40ms max), sampler advances only ~80 positions (2000 samples = 1 second at 2kHz)
-  // With 5000 total slots, there's always massive separation. No overwrite risk!
   for (int i = 0; i < 2000; i++) {
     int srcIdx = (startIdx + i) % RING_BUFFER_SIZE;
     currentData.accelX_samples[i] = accelX_ring[srcIdx];
@@ -165,23 +166,17 @@ void collectMeasurementData() {
     currentData.microphoneSamples[i] = microphone_ring[srcIdx];
   }
   currentData.accelSampleCount = 2000;  // Full 1 second of 2kHz data
-  
-  // Also store most recent single values for backward compatibility
   currentData.accelX = accelX_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
   currentData.accelY = accelY_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
   currentData.accelZ = accelZ_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
   currentData.gyroX = 0;
   currentData.gyroY = 0;
   currentData.gyroZ = 0;
-  
   // 3. IR temperature frame - GRAB FROM CACHE (background task updates every 200ms)
-  stepTime = esp_timer_get_time() / 1000;
   xSemaphoreTake(irCacheMutex, portMAX_DELAY);
-  int irReadIdx = 1 - irWriteIdx;  // Read from buffer NOT being written to
-  for (int i = 0; i < 192; i++) {
-    currentData.irFrame[i] = irCache[irReadIdx].irFrame[i];
-  }
-  currentData.temperature = irCache[irReadIdx].avgTemp;
+  // Read from buffer NOT being written to
+  memcpy(currentData.irFrame, irCache[1 - irWriteIdx].irFrame, sizeof(uint16_t) * 192);
+  currentData.temperature = irCache[1 - irWriteIdx].avgTemp;
   xSemaphoreGive(irCacheMutex);
   
   // 3.5 BME688 Environment Data - GRAB FROM CACHE (background task updates every 200ms)
@@ -189,13 +184,9 @@ void collectMeasurementData() {
   int bmeReadIdx = 1 - bmeWriteIdx;  // Read from buffer NOT being written to
   currentData.humidity = bmeCache[bmeReadIdx].humidity;
   xSemaphoreGive(bmeCacheMutex);
-
   // 4. RGB camera frame 
-  uint16_t* rgbFramePtr = malloc(sizeof(uint16_t) * 4096);
   get_ov2640_image(rgbFramePtr);
   memcpy(currentData.rgbFrame, rgbFramePtr, sizeof(uint16_t) * 4096);
-  free(rgbFramePtr);
-  
   // 5. Timestamp
   currentData.timestamp_ms = esp_timer_get_time() / 1000;
   // Release mutex after all updates complete
@@ -236,25 +227,13 @@ static void measurementCollectorTask(void *pvParameters) {
 }
 
 // ============ IR Sensor Background Task (Every 200ms) ============
-// Continuously reads IR sensor and caches result in double buffer
 static void irSensorBackgroundTask(void *pvParameters) {
   TickType_t lastWakeTime = xTaskGetTickCount();
   while (1) {
-    // Precise 200ms timing
     vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(500));
-    // Read IR sensor (blocking ~134ms)
-    float mlx90641Frame[192] = {0};
-    float Tamb = 0;
-    bool status   = read_thermal_matrix_frame(mlx90641Frame, &Tamb);
-    // Calculate average temperature
-    if (!status) {
+    if(!read_thermal_matrix_frame(mlx90641Frame, &Tamb)) {
       ESP_LOGE(TAG, "IR Sensor Task: Failed to read thermal frame data");
-      continue;  // Skip this iteration if read failed
-    }
-    else {
-      if(debug_code){
-        ESP_LOGI(TAG, "IR Sensor Task: Thermal frame read successfully");
-      }
+      continue;
     }
     float avgTemp = 0;
     for (int i = 0; i < 192; i++) {
@@ -263,75 +242,50 @@ static void irSensorBackgroundTask(void *pvParameters) {
     avgTemp /= 192;
     // Write to cache with mutex protection
     xSemaphoreTake(irCacheMutex, portMAX_DELAY);
-    int writeIdx = irWriteIdx;
-    
     // Convert temperatures to fixed-point format (+ 40 offset, *100 scale)
     for (int i = 0; i < 192; i++) {
-      irCache[writeIdx].irFrame[i] = (uint16_t)((mlx90641Frame[i] + 40) * 100);
+      irCache[irWriteIdx].irFrame[i] = (uint16_t)((mlx90641Frame[i] + 40) * 100);
     }
-    irCache[writeIdx].avgTemp = avgTemp;
-    irCache[writeIdx].Ta = Tamb; // Assuming myIRcam is globally accessible from its component
-    irCache[writeIdx].timestamp = esp_timer_get_time() / 1000;
-    
+    irCache[irWriteIdx].avgTemp = avgTemp;
+    irCache[irWriteIdx].Ta = Tamb; // Assuming myIRcam is globally accessible from its component
+    irCache[irWriteIdx].timestamp = esp_timer_get_time() / 1000;
     // Swap write index for next iteration (double buffering)
     irWriteIdx = 1 - irWriteIdx;
-    
     xSemaphoreGive(irCacheMutex);
-    
     taskYIELD();
   }
 }
 
 // ============ BME Sensor Background Task (Every 200ms) ============
-// Continuously reads BME688 sensor and caches result in double buffer
-// Continuously reads BME688 sensor and caches result in double buffer
 static void bmeSensorBackgroundTask(void *pvParameters) {
   TickType_t lastWakeTime = xTaskGetTickCount();
   while (1) {
-      // Precise 200ms timing
       vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(200));
-      // Read BME sensor (blocking ~123ms with optimized settings)
-      bme680_values_float_t *bme_results = measureBME680();
-      // 1. Safe Guard: Check if the sensor read was successful
-      if (bme_results != NULL) {
-          // 2. Write to cache with mutex protection
-          if (xSemaphoreTake(bmeCacheMutex, portMAX_DELAY) == pdTRUE) {
-              int writeIdx = bmeWriteIdx;
-              
-              bmeCache[writeIdx].temp = bme_results->temperature;
-              bmeCache[writeIdx].humidity = bme_results->humidity;
-              bmeCache[writeIdx].pressure = bme_results->pressure;
-              bmeCache[writeIdx].gas = bme_results->gas_resistance;
-              bmeCache[writeIdx].timestamp = esp_timer_get_time() / 1000;
-              
-              // Swap write index so the reader knows a new frame is ready
-              bmeWriteIdx = 1 - bmeWriteIdx;
-              
-              xSemaphoreGive(bmeCacheMutex);
-          }
-          
-          // 3. Prevent Memory Leak: Free the results if allocated dynamically
-          free(bme_results); 
-          
-      } else {
-          ESP_LOGE("BME_TASK", "Failed to measure BME680 data");
+      measureBME680(&bme_results);
+      // 2. Write to cache with mutex protection
+      if (xSemaphoreTake(bmeCacheMutex, portMAX_DELAY) == pdTRUE) {
+          bmeCache[bmeWriteIdx].temp = bme_results.temperature;
+          bmeCache[bmeWriteIdx].humidity = bme_results.humidity;
+          bmeCache[bmeWriteIdx].pressure = bme_results.pressure;
+          bmeCache[bmeWriteIdx].gas = bme_results.gas_resistance;
+          bmeCache[bmeWriteIdx].timestamp = esp_timer_get_time() / 1000;
+          // Swap write index so the reader knows a new frame is ready
+          bmeWriteIdx = 1 - bmeWriteIdx;
+          xSemaphoreGive(bmeCacheMutex);
       }
     }
 }
 
 // ============ High-Speed Sampler Task (2kHz on Core 1) ============
-// Precise microsecond-level sampling for DFT analysis
-// 2000 samples/second = 500µs intervals
-// Results stored in ring buffers (no mutex needed - single writer)
 static void highSpeedSamplerTask(void *pvParameters) {
   int64_t lastSampleTime_us = 0;
-  int64_t targetInterval_us = 500;  // 2kHz = one sample every 500 microseconds
+  int64_t targetInterval_us = 10000;  // 2kHz = one sample every 500 microseconds
   
   ESP_LOGI(TAG, "HighSpeedSampler Started - Sampling accel + mic @ 2kHz (precise microsecond timing)");
   
   // Initialize reference time
   lastSampleTime_us = esp_timer_get_time();
-  
+  esp_task_wdt_add(NULL);
   while (1) {
     // Get current time
     int64_t now_us = esp_timer_get_time();
@@ -339,31 +293,23 @@ static void highSpeedSamplerTask(void *pvParameters) {
     // Check if time for next sample (500µs interval)
     if ((now_us - lastSampleTime_us) >= targetInterval_us) {
       lastSampleTime_us = now_us;
-      
-      // Read acceleration (FSPI - ~200µs)
-      lis3dh_float_data_t *accel_results = measureLIS3DH();
-      if(accel_results == NULL) {
-        ESP_LOGE(TAG, "Failed to read LIS3DH data in high-speed sampler");
-        continue;  // Skip this sample if failed
-      }
-      
       // Read microphone (ADC - very fast ~10µs)
-      uint16_t *mic_results = measureMicrophone();
-      if(mic_results == NULL) {
+      if(!measureMicrophone(&mic_result)) {
         ESP_LOGE(TAG, "Failed to read microphone data in high-speed sampler");
         continue;  // Skip this sample if failed
       }
-      
+      // Read acceleration (FSPI - ~200µs)
+      measureLIS3DH(&accel_results);      
       // Store in ring buffer (atomic write, single writer)
       int idx = ringBufferIndex;
-      accelX_ring[idx] = (int16_t)(accel_results->ax * 1000);
-      accelY_ring[idx] = (int16_t)(accel_results->ay * 1000);
-      accelZ_ring[idx] = (int16_t)(accel_results->az * 1000);
-      microphone_ring[idx] = *mic_results;
+      accelX_ring[idx] = (int16_t)(accel_results.ax * 1000);
+      accelY_ring[idx] = (int16_t)(accel_results.ay * 1000);
+      accelZ_ring[idx] = (int16_t)(accel_results.az * 1000);
+      microphone_ring[idx] = mic_result;
       // Advance ring buffer index
       ringBufferIndex = (ringBufferIndex + 1) % RING_BUFFER_SIZE;
+      esp_task_wdt_reset();
     }
-    
     // Yield to allow other tasks to run (watchdog, SPI handler, etc)
     // This prevents starving the whole system
     taskYIELD();
@@ -493,12 +439,11 @@ void startMeasurementTask() {
 
 // Start the high-speed sampler task (continuous 1kHz accel + mic sampling)
 void startHighSpeedSamplerTask() {
-  static TaskHandle_t samplerTaskHandle = NULL;
   
   xTaskCreatePinnedToCore(
     highSpeedSamplerTask,
     "HighSpeedSampler",
-    8192,           // Stack size (8 KB - safe for SPI + ADC operations)
+    16384,          // Stack size (16 KB - safe for SPI + ADC operations)
     NULL,           // Parameters
     1,              // Priority (low - won't interfere with SPI handler)
     &samplerTaskHandle,

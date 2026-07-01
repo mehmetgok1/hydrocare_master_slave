@@ -945,7 +945,7 @@ static bool bme680_spi_read(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, ui
                    __FUNCTION__, dev);
         return false;
     }
-    esp_rom_delay_us(300);
+    esp_rom_delay_us(200);
     esp_err_t ret;
     uint32_t total_len = 1 + len; // 1 byte address + N bytes data
 
@@ -1002,7 +1002,7 @@ static bool bme680_spi_write(bme680_sensor_t* dev, uint8_t reg, uint8_t *data, u
 
     static uint8_t mosi[BME680_SPI_BUF_SIZE];
     uint32_t total_len = 1 + len; // 1 byte address + N bytes data
-    esp_rom_delay_us(300);
+    esp_rom_delay_us(200);
     // Check boundary safety: total packet length cannot exceed buffer size
     if (total_len > BME680_SPI_BUF_SIZE)
     {

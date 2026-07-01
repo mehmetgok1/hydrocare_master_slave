@@ -5,7 +5,7 @@
 #include "config.h"
 
 //bme680 calls
-bme680_values_float_t* measureBME680();
+void measureBME680(bme680_values_float_t* bme680_results);
 
 //ov2640 camera calls
 void get_ov2640_image(uint16_t* currentData);
@@ -17,16 +17,16 @@ void set_led_brightness(uint8_t brightness_pct);
 void set_ir_led(bool status);
 
 //lis3dh calls
-lis3dh_float_data_t* measureLIS3DH();
+void measureLIS3DH(lis3dh_float_data_t* accel_results);
 
 // IRTEMP camera calls
 bool read_thermal_matrix_frame(float* mlx90641Frame, float* Tamb);
 
 // microphone measurement function
-uint16_t* measureMicrophone(void);
+bool measureMicrophone(uint16_t* mic_result);
 
 // ambient light measurement function
-uint16_t* measureAmbLight(void);
+bool measureAmbLight(uint16_t* ambLight);
 
 
 
