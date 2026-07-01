@@ -6,5 +6,5 @@ idf_component_register(SRCS "main.c"
                         config
                         bme680
                         esp32-camera
-                        measurement
+                        communication
                     )

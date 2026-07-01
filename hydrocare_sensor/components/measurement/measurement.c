@@ -58,23 +58,22 @@ uint16_t* measureMicrophone(void)
     return microphone;
 }
 
-float* read_thermal_matrix_frame(void) {
+bool read_thermal_matrix_frame(float* mlx90641Frame, float* Tamb) {
     // 1. Allocate the temporary raw frame storage on the heap (~640 bytes)
     uint16_t* mlx90641FrameData = malloc(320 * sizeof(uint16_t));
     
     // 2. Allocate the final output temperature array on the heap (~768 bytes)
-    float* mlx90641Frame = malloc(192 * sizeof(float));
+    //float* mlx90641Frame = malloc(192 * sizeof(float));
     
     // Safety Catch: Check if any allocation failed
     if (mlx90641FrameData == NULL || mlx90641Frame == NULL) {
         ESP_LOGE("MEASUREMENT", "Heap allocation failed for thermal frame processing!");
         free(mlx90641FrameData); // Safe to pass NULL to free()
         free(mlx90641Frame);
-        return NULL;
+        return false;
     }
     
     float emissivity = 0.95; 
-    float TR; 
 
     // 3. Fetch raw data from the camera array (Default Address: 0x33)
     int status = MLX90641_GetFrameData(0x33, mlx90641FrameData);
@@ -82,20 +81,20 @@ float* read_thermal_matrix_frame(void) {
         ESP_LOGE("MEASUREMENT", "Error getting frame data from MLX90641");
         free(mlx90641FrameData);
         free(mlx90641Frame);
-        return NULL;
+        return false;
     }
 
     // 4. Calculate the ambient temperature of the sensor body first
-    TR = MLX90641_GetTa(mlx90641FrameData, get_mlx90641_params()) - 8.0; 
+    *Tamb = MLX90641_GetTa(mlx90641FrameData, get_mlx90641_params()) - 8.0; 
 
     // 5. Calculate the real temperatures for all 192 individual pixels!
-    MLX90641_CalculateTo(mlx90641FrameData, get_mlx90641_params(), emissivity, TR, mlx90641Frame);
+    MLX90641_CalculateTo(mlx90641FrameData, get_mlx90641_params(), emissivity, *Tamb, mlx90641Frame);
 
     // 6. Raw data buffer is no longer needed. Clean it up immediately!
     free(mlx90641FrameData);
 
     // 7. Return the pointer to the calculated temperatures
-    return mlx90641Frame;
+    return true;
 }
 
 

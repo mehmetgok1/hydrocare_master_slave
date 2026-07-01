@@ -20,7 +20,7 @@ void set_ir_led(bool status);
 lis3dh_float_data_t* measureLIS3DH();
 
 // IRTEMP camera calls
-float* read_thermal_matrix_frame(void);
+bool read_thermal_matrix_frame(float* mlx90641Frame, float* Tamb);
 
 // microphone measurement function
 uint16_t* measureMicrophone(void);

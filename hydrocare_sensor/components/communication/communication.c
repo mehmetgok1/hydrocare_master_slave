@@ -12,7 +12,7 @@ bool debug_code=false;
 // ============ High-Speed Sampling Ring Buffers (2kHz) ============
 // 5000-sample buffer = 2.5 seconds of continuous data @ 2kHz
 // Large buffer prevents race condition: sampler index always moves far ahead of read position
-const int RING_BUFFER_SIZE = 5000;  // 5 seconds of 1kHz data
+#define RING_BUFFER_SIZE 5000  // 5 seconds of 1kHz data
 int16_t accelX_ring[RING_BUFFER_SIZE] = {0};
 int16_t accelY_ring[RING_BUFFER_SIZE] = {0};
 int16_t accelZ_ring[RING_BUFFER_SIZE] = {0};
@@ -34,7 +34,7 @@ typedef enum {
 static SlaveState slaveState = STATE_IDLE;
 static uint32_t measurementStartTime = 0;
 static uint32_t lockStartTime = 0;        // Track when lock was set (for 5-sec timeout)
-static const uint32_t LOCK_TIMEOUT_MS = 5000;  // 5 seconds - auto-reset stale locks
+#define LOCK_TIMEOUT_MS  5000;  // 5 seconds - auto-reset stale locks
 
 // ============ FreeRTOS Synchronization ============
 static EventGroupHandle_t spiEventGroup = NULL;
@@ -46,21 +46,21 @@ static TaskHandle_t measurementTaskHandle = NULL;
 
 // ============ Cached Sensor Data (Double Buffering) ============
 // IR cache structure
-struct IRCache {
+typedef struct  {
   uint16_t irFrame[192];
   float avgTemp;
   float Ta;
   uint32_t timestamp;
-};
+}IRCache;
 
 // BME cache structure
-struct BMECache {
+typedef struct {
   float temp;
   float humidity;
   float pressure;
   float gas;
   uint32_t timestamp;
-};
+} BMECache;
 
 static IRCache irCache[2] = {0};          // Double buffer (avoid race conditions while reading)
 static BMECache bmeCache[2] = {0};        // Double buffer
@@ -145,8 +145,7 @@ void collectMeasurementData() {
   
   // 1. Ambient light (fast, ~1ms)
   stepTime = esp_timer_get_time() / 1000;
-  measureAmbLight();
-  currentData.ambientLight = ambLight;
+  currentData.ambientLight = *measureAmbLight();
   // 2. Grab high-speed accel + mic samples from ring buffer (last 2000 @ 2kHz = 1 second of data)
   // Calculate start index (2000 samples back from current write position)
   // Capture endIdx FIRST - even if sampler advances during copy, we use this snapshot
@@ -190,25 +189,13 @@ void collectMeasurementData() {
   int bmeReadIdx = 1 - bmeWriteIdx;  // Read from buffer NOT being written to
   currentData.humidity = bmeCache[bmeReadIdx].humidity;
   xSemaphoreGive(bmeCacheMutex);
-  // 4. RGB camera frame (slow, ~100ms)
-  camera_fb_t *fb = esp_camera_fb_get();
-  if (fb) {
-    int startX = (fb->width - 64) / 2;
-    int startY = (fb->height - 64) / 2;
-    int idx = 0;
-    uint16_t rgbMin = 65535, rgbMax = 0;
-    uint32_t rgbSum = 0;
-    for (int row = 0; row < 64; row++) {
-      for (int col = 0; col < 64; col++) {
-        int src = ((startY + row) * fb->width + (startX + col)) * 2;
-        uint16_t pixel = (fb->buf[src] << 8) | fb->buf[src + 1];
-        currentData.rgbFrame[idx++] = pixel;
-      }
-    }
-    esp_camera_fb_return(fb);
-  } else {
-    ESP_LOGW(TAG, "Camera buffer NULL!");
-  }
+
+  // 4. RGB camera frame 
+  uint16_t* rgbFramePtr = malloc(sizeof(uint16_t) * 4096);
+  get_ov3660_image(rgbFramePtr);
+  memcpy(currentData.rgbFrame, rgbFramePtr, sizeof(uint16_t) * 4096);
+  free(rgbFramePtr);
+  
   // 5. Timestamp
   currentData.timestamp_ms = esp_timer_get_time() / 1000;
   // Release mutex after all updates complete
@@ -217,18 +204,8 @@ void collectMeasurementData() {
   // ===== MEASUREMENT SUMMARY WITH SENSOR DATA =====
   if(debug_code){
     ESP_LOGI(TAG, "Measurement Complete in %llu ms", elapsed);
-  }
-  uint16_t rgbFst  = currentData.rgbFrame[0];
-  uint16_t rgbMid  = currentData.rgbFrame[2048];
-  uint16_t rgbLast = currentData.rgbFrame[4095];
-  if(debug_code){
-    ESP_LOGI(TAG, "RGB[Fst:0x%04X Mid:0x%04X Last:0x%04X]", rgbFst, rgbMid, rgbLast);
-  }
-  uint16_t irFst = currentData.irFrame[0];
-  uint16_t irMid = currentData.irFrame[96];
-  uint16_t irLast = currentData.irFrame[191];
-  if(debug_code){
-    ESP_LOGI(TAG, "IR[Fst:0x%04X Mid:0x%04X Last:0x%04X]", irFst, irMid, irLast);
+    ESP_LOGI(TAG, "RGB[Fst:0x%04X Mid:0x%04X Last:0x%04X]", currentData.rgbFrame[0], currentData.rgbFrame[2048], currentData.rgbFrame[4095]);
+    ESP_LOGI(TAG, "IR[Fst:0x%04X Mid:0x%04X Last:0x%04X]", currentData.irFrame[0], currentData.irFrame[96], currentData.irFrame[191]);
     ESP_LOGI(TAG, "Seq:%d RingBufIdx:%d TxBufReady", sequenceNumber, ringBufferIndex);
   }
   // Buffer info
@@ -266,11 +243,22 @@ static void irSensorBackgroundTask(void *pvParameters) {
     // Precise 200ms timing
     vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(500));
     // Read IR sensor (blocking ~134ms)
-    measureIRTemp();
+    float mlx90641Frame[192] = {0};
+    float Tamb = 0;
+    bool status   = read_thermal_matrix_frame(mlx90641Frame, &Tamb);
     // Calculate average temperature
+    if (!status) {
+      ESP_LOGE(TAG, "IR Sensor Task: Failed to read thermal frame data");
+      continue;  // Skip this iteration if read failed
+    }
+    else {
+      if(debug_code){
+        ESP_LOGI(TAG, "IR Sensor Task: Thermal frame read successfully");
+      }
+    }
     float avgTemp = 0;
     for (int i = 0; i < 192; i++) {
-      avgTemp += myIRcam.T_o[i];
+      avgTemp += mlx90641Frame[i];
     }
     avgTemp /= 192;
     // Write to cache with mutex protection
@@ -279,10 +267,10 @@ static void irSensorBackgroundTask(void *pvParameters) {
     
     // Convert temperatures to fixed-point format (+ 40 offset, *100 scale)
     for (int i = 0; i < 192; i++) {
-      irCache[writeIdx].irFrame[i] = (uint16_t)((myIRcam.T_o[i] + 40) * 100);
+      irCache[writeIdx].irFrame[i] = (uint16_t)((mlx90641Frame[i] + 40) * 100);
     }
     irCache[writeIdx].avgTemp = avgTemp;
-    irCache[writeIdx].Ta = myIRcam.Ta; // Assuming myIRcam is globally accessible from its component
+    irCache[writeIdx].Ta = Tamb; // Assuming myIRcam is globally accessible from its component
     irCache[writeIdx].timestamp = esp_timer_get_time() / 1000;
     
     // Swap write index for next iteration (double buffering)
@@ -296,33 +284,39 @@ static void irSensorBackgroundTask(void *pvParameters) {
 
 // ============ BME Sensor Background Task (Every 200ms) ============
 // Continuously reads BME688 sensor and caches result in double buffer
+// Continuously reads BME688 sensor and caches result in double buffer
 static void bmeSensorBackgroundTask(void *pvParameters) {
   TickType_t lastWakeTime = xTaskGetTickCount();
-  
   while (1) {
-    // Precise 200ms timing
-    vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(200));
-    
-    // Read BME sensor (blocking ~123ms with optimized settings)
-    measureBME688();
-    
-    // Write to cache with mutex protection
-    xSemaphoreTake(bmeCacheMutex, portMAX_DELAY);
-    int writeIdx = bmeWriteIdx;
-    
-    bmeCache[writeIdx].temp = bme_temp;
-    bmeCache[writeIdx].humidity = bme_hum;
-    bmeCache[writeIdx].pressure = bme_pres;
-    bmeCache[writeIdx].gas = bme_gas;
-    bmeCache[writeIdx].timestamp = esp_timer_get_time() / 1000;
-    
-    // Swap write index for next iteration (double buffering)
-    bmeWriteIdx = 1 - bmeWriteIdx;
-    
-    xSemaphoreGive(bmeCacheMutex);
-    
-    taskYIELD();
-  }
+      // Precise 200ms timing
+      vTaskDelayUntil(&lastWakeTime, pdMS_TO_TICKS(200));
+      // Read BME sensor (blocking ~123ms with optimized settings)
+      bme680_values_float_t *bme_results = measureBME680();
+      // 1. Safe Guard: Check if the sensor read was successful
+      if (bme_results != NULL) {
+          // 2. Write to cache with mutex protection
+          if (xSemaphoreTake(bmeCacheMutex, portMAX_DELAY) == pdTRUE) {
+              int writeIdx = bmeWriteIdx;
+              
+              bmeCache[writeIdx].temp = bme_results->temperature;
+              bmeCache[writeIdx].humidity = bme_results->humidity;
+              bmeCache[writeIdx].pressure = bme_results->pressure;
+              bmeCache[writeIdx].gas = bme_results->gas_resistance;
+              bmeCache[writeIdx].timestamp = esp_timer_get_time() / 1000;
+              
+              // Swap write index so the reader knows a new frame is ready
+              bmeWriteIdx = 1 - bmeWriteIdx;
+              
+              xSemaphoreGive(bmeCacheMutex);
+          }
+          
+          // 3. Prevent Memory Leak: Free the results if allocated dynamically
+          free(bme_results); 
+          
+      } else {
+          ESP_LOGE("BME_TASK", "Failed to measure BME680 data");
+      }
+    }
 }
 
 // ============ High-Speed Sampler Task (2kHz on Core 1) ============
@@ -347,18 +341,25 @@ static void highSpeedSamplerTask(void *pvParameters) {
       lastSampleTime_us = now_us;
       
       // Read acceleration (FSPI - ~200µs)
-      readAcceleration();
+      lis3dh_float_data_t *accel_results = measureLIS3DH();
+      if(accel_results == NULL) {
+        ESP_LOGE(TAG, "Failed to read LIS3DH data in high-speed sampler");
+        continue;  // Skip this sample if failed
+      }
       
       // Read microphone (ADC - very fast ~10µs)
-      measureMicrophone();
+      uint16_t *mic_results = measureMicrophone();
+      if(mic_results == NULL) {
+        ESP_LOGE(TAG, "Failed to read microphone data in high-speed sampler");
+        continue;  // Skip this sample if failed
+      }
       
       // Store in ring buffer (atomic write, single writer)
       int idx = ringBufferIndex;
-      accelX_ring[idx] = (int16_t)(ax * 1000);
-      accelY_ring[idx] = (int16_t)(ay * 1000);
-      accelZ_ring[idx] = (int16_t)(az * 1000);
-      microphone_ring[idx] = microphone;
-      
+      accelX_ring[idx] = (int16_t)(accel_results->ax * 1000);
+      accelY_ring[idx] = (int16_t)(accel_results->ay * 1000);
+      accelZ_ring[idx] = (int16_t)(accel_results->az * 1000);
+      microphone_ring[idx] = *mic_results;
       // Advance ring buffer index
       ringBufferIndex = (ringBufferIndex + 1) % RING_BUFFER_SIZE;
     }
@@ -450,14 +451,15 @@ void receiveCommand() {
     else if (address == ADDR_IR_LED) {
       // ===== IR LED CONTROL (0x00=off, 0x01=on) =====
       ESP_LOGI(TAG, "WRITE IR_LED: %s", dataValue ? "ON" : "OFF");
-      IRLED(dataValue);
+      bool ledStatus = dataValue ? true : false;
+      set_ir_led(ledStatus);
       // Status at [1] stays prefilled
     }
     
     else if (address == ADDR_BRIGHTNESS) {
       // ===== LED BRIGHTNESS (0-100) =====
       ESP_LOGI(TAG, "WRITE BRIGHTNESS: %d%%", dataValue);
-      powerLED(dataValue);
+      set_led_brightness(dataValue);
       // Status at [1] stays prefilled
     }
     

@@ -1,6 +1,5 @@
 #include <inttypes.h>    // For vTaskDelay if uncommented
-#include "measurement.h"
-
+#include "communication.h"
 static const char *TAG = "MAIN";
 
 
@@ -15,11 +14,13 @@ void app_main(void) {
     ESP_LOGE(TAG, "Failed to read data from LIS3DH sensor");
   } 
   float *thermal_frame =malloc(192 * sizeof(float));
-  thermal_frame = read_thermal_matrix_frame();
-  if (thermal_frame) {
+  float Tamb = 0;
+  bool status = read_thermal_matrix_frame(thermal_frame, &Tamb);
+  if (status) {
     ESP_LOGI(TAG, "Thermal Frame Data - First Pixel: %.2f", thermal_frame[0]);
     ESP_LOGI(TAG, "Thermal Frame Data - Last Pixel: %.2f", thermal_frame[191]);
     ESP_LOGI(TAG, "Thermal Frame Data - Middle Pixel: %.2f", thermal_frame[95]);
+    ESP_LOGI(TAG, "Tamb: %.2f", Tamb);
     free(thermal_frame);
   } else {
     ESP_LOGE(TAG, "Failed to read thermal frame data");

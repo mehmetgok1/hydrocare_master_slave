@@ -2,7 +2,7 @@
 #define COMMUNICATION_H
 #include <inttypes.h>  
 #include "measurement.h"
-
+#include "driver/spi_slave.h"
 // ============ ADDRESS-BASED R/W PROTOCOL ============
 // Command byte format: [R/W bit (7) | 7-bit address (6-0)]
 #define PROTO_CMD_READ  0x80        // R/W=1 (bit 7 set)
