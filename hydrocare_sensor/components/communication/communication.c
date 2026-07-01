@@ -24,6 +24,11 @@ static uint16_t mic_result=0;
 static uint16_t ambLight_result=0;
 static float mlx90641Frame[192] = {0};
 static float Tamb = 0;
+// Double-buffer for IR frame sampling (background task writes, collector reads)
+static float mlx_frame_buf[2][192] = { {0} };
+static float mlx_frame_temp[2] = {0, 0};
+static volatile int mlx_write_idx = 0; // index the writer last wrote to
+static portMUX_TYPE mlxMux = portMUX_INITIALIZER_UNLOCKED;
 static uint16_t rgbFramePtr[4096] = {0};
 
 static SlaveState slaveState = STATE_IDLE;
@@ -34,6 +39,7 @@ static SemaphoreHandle_t currentDataMutex = NULL;
 static portMUX_TYPE samplerMux = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t measurementTaskHandle = NULL;
 static TaskHandle_t samplerTaskHandle = NULL;
+static TaskHandle_t irTaskHandle = NULL;
 
 // Event group bits
 #define EVENT_TRIGGER_RECEIVED (1 << 0)    // Trigger command received
@@ -126,11 +132,13 @@ void collectMeasurementData() {
   currentData.gyroX = 0;
   currentData.gyroY = 0;
   currentData.gyroZ = 0;
-  // 3. IR temperature frame - GRAB FROM CACHE (background task updates every 200ms)
-  // Read from buffer NOT being written to
-  read_thermal_matrix_frame(mlx90641Frame, &Tamb);
-  memcpy(currentData.irFrame, mlx90641Frame, sizeof(uint16_t) * 192);
-  currentData.temperature = Tamb;
+  // 3. IR temperature frame - read from double-buffered background sampler
+  // Pick the buffer not currently being written to
+  taskENTER_CRITICAL(&mlxMux);
+  int read_idx = 1 - mlx_write_idx;
+  taskEXIT_CRITICAL(&mlxMux);
+  memcpy(currentData.irFrame, mlx_frame_buf[read_idx], sizeof(uint16_t) * 192);
+  currentData.temperature = mlx_frame_temp[read_idx];
   
   // 3.5 BME688 Environment Data - GRAB FROM CACHE (background task updates every 200ms)
   measureBME680(&bme_results);
@@ -209,6 +217,25 @@ void setup_timer() {
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "Failed to start sampler timer: %s", esp_err_to_name(ret));
     while (1) vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+}
+
+// ============ IR Sampler Task (double-buffered, runs every 100ms) ============
+static void irSamplerTask(void *pvParameters) {
+  (void) pvParameters;
+  while (1) {
+    int write_idx = 1 - mlx_write_idx; // write to the back buffer
+    float temp = 0.0f;
+    // Read thermal frame into back buffer
+    read_thermal_matrix_frame(mlx_frame_buf[write_idx], &temp);
+    mlx_frame_temp[write_idx] = temp;
+    // Publish the newly written buffer index atomically
+    taskENTER_CRITICAL(&mlxMux);
+    mlx_write_idx = write_idx;
+    taskEXIT_CRITICAL(&mlxMux);
+
+    // Sleep for 100ms
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
@@ -381,4 +408,19 @@ void startHighSpeedSamplerTask() {
     &samplerTaskHandle,
     1               // Core 1 (dedicated to sampling, Core 0 free for SPI + measurement)
   );
+}
+void initIRSamplerTask() {
+    // Start IR sampler task to keep thermal frame cache fresh
+  // The task will be created if not already running
+  if (!irTaskHandle) {
+    xTaskCreatePinnedToCore(
+      irSamplerTask,
+      "IRSampler",
+      4096,          // Stack size
+      NULL,
+      1,
+      &irTaskHandle,
+      0);
+    ESP_LOGI(TAG, "IR sampler task started on Core 0");
+  }
 }

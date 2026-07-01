@@ -74,4 +74,5 @@ void receiveCommand();
 void startMeasurementTask();          // Start background measurement collector task
 void startHighSpeedSamplerTask();     // Start 2kHz accel+mic sampler task
 void setup_timer();                    // Setup timer for periodic tasks
+void initIRSamplerTask();               // Start background IR sampler task
 #endif
