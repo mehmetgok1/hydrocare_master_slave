@@ -178,6 +178,7 @@ static void measurementCollectorTask(void *pvParameters) {
       }
       collectMeasurementData();
       txBuf[1] = STATUS_MEASURED;
+      slaveState = STATE_READY_TRANSFER;
       if(debug_code){
         ESP_LOGI(TAG, "Measurement Task: Data ready, awaiting LOCK command from master");
       }
@@ -224,7 +225,7 @@ void setup_timer() {
 static void irSamplerTask(void *pvParameters) {
   (void) pvParameters;
   TickType_t xLastWakeTime;
-  const TickType_t xFrequency = pdMS_TO_TICKS(100);
+  const TickType_t xFrequency = pdMS_TO_TICKS(200);
 
   // Initialise the xLastWakeTime variable with the current time.
   xLastWakeTime = xTaskGetTickCount();
@@ -311,8 +312,8 @@ void receiveCommand() {
         if(debug_code){
           ESP_LOGI(TAG, "WRITE CTRL: TRIGGER_MEASUREMENT");
         }
-        // Only accept TRIGGER if: in correct state AND not in MEASURED limbo
-        if ((slaveState == STATE_IDLE || slaveState == STATE_READY_TRANSFER) && txBuf[1] != STATUS_MEASURED) {
+        // Only accept TRIGGER when the previous packet has been fully released.
+        if (slaveState == STATE_IDLE) {
           slaveState = STATE_MEASURING;
           txBuf[1] = STATUS_MEASURING;
           // Signal background measurement task
@@ -321,7 +322,7 @@ void receiveCommand() {
             ESP_LOGI(TAG, "Measurement triggered");
           }
         } else {
-          ESP_LOGW(TAG, "TRIGGER ignored in state %d, txBuf[1]=0x%02X", slaveState, txBuf[1]);
+          ESP_LOGW(TAG, "TRIGGER ignored in state %d, txBuf[1]=0x%02X (waiting for LOCK/UNLOCK to finish)", slaveState, txBuf[1]);
         }
       }
       else if (dataValue == CTRL_LOCK_BUFFERS) {
