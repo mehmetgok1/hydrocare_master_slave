@@ -1,9 +1,7 @@
 #ifndef COMMUNICATION_H
 #define COMMUNICATION_H
-
-#include <stdint.h>
-#include <freertos/FreeRTOS.h>
-#include "config.h"
+#include <inttypes.h>  
+#include "measurement.h"
 
 // ============ ADDRESS-BASED R/W PROTOCOL ============
 // Command byte format: [R/W bit (7) | 7-bit address (6-0)]

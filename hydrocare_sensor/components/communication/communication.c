@@ -1,16 +1,4 @@
 #include "communication.h"
-#include "config.h"
-#include "measurement.h"
-#include "leds.h"
-#include "driver/spi_slave.h"
-#include "esp_camera.h"
-#include "esp_log.h"
-#include "esp_timer.h"
-#include "MLX90641.h"
-#include <string.h>
-#include <math.h>
-#include <freertos/event_groups.h>
-#include <freertos/semphr.h>
 
 // DMA-capable buffers
 uint8_t *rxBuf;
