@@ -229,7 +229,7 @@ void initLIS3DH()
     // Add the LIS3DH device to the SPI bus
     spi_device_interface_config_t devcfg = {
         .command_bits = 0,
-        .clock_speed_hz = 1 * 100 * 1000, // 400kHz
+        .clock_speed_hz = 10 * 1000 * 1000, // 400kHz
         .mode = 3, // LIS3DH uses SPI mode 3 (CPOL=1, CPHA=1)
         .spics_io_num = Acc_CS,
         .queue_size = 1,

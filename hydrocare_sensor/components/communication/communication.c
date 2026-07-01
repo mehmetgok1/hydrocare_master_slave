@@ -38,17 +38,6 @@ static TaskHandle_t samplerTaskHandle = NULL;
 // Event group bits
 #define EVENT_TRIGGER_RECEIVED (1 << 0)    // Trigger command received
 
-static void logTaskStackWatermarks(const char *label) {
-  if (measurementTaskHandle) {
-    ESP_LOGI(TAG, "%s measurement stack watermark: %u words", label, (unsigned)uxTaskGetStackHighWaterMark(measurementTaskHandle));
-  }
-  if (samplerTaskHandle) {
-    ESP_LOGI(TAG, "%s sampler stack watermark: %u words", label, (unsigned)uxTaskGetStackHighWaterMark(samplerTaskHandle));
-  }
-}
-
-
-
 // ============ Initialization ============
 void initSPIComm() {
   // Allocate DMA buffers
@@ -161,7 +150,6 @@ void collectMeasurementData() {
     ESP_LOGI(TAG, "IR[Fst:0x%04X Mid:0x%04X Last:0x%04X]", currentData.irFrame[0], currentData.irFrame[96], currentData.irFrame[191]);
     ESP_LOGI(TAG, "Seq:%d RingBufIdx:%d TxBufReady", sequenceNumber, ringBufferIndex);
   }
-    logTaskStackWatermarks("After measurement");
   // Buffer info
 }
 
@@ -226,13 +214,17 @@ void setup_timer() {
 
 static void highSpeedSamplerTask(void *pvParameters) {
     ESP_LOGI(TAG, "HighSpeedSampler Task Started");
-  uint32_t sampleBatchCount = 0;
+  int64_t sample_start_us = 0;
 
     while (1) {
         // Block indefinitely until the 500us timer releases the semaphore
         if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
+            /* Fine-grained timing to isolate which stage causes overruns */
+            int64_t t0 = esp_timer_get_time();
             measureMicrophone(&mic_result);
+            int64_t t1 = esp_timer_get_time();
             measureLIS3DH(&accel_results);
+            int64_t t2 = esp_timer_get_time();
             taskENTER_CRITICAL(&samplerMux);
             int idx = ringBufferIndex;
             accelX_ring[idx] = (int16_t)(accel_results.ax * 1000);
@@ -241,12 +233,21 @@ static void highSpeedSamplerTask(void *pvParameters) {
             microphone_ring[idx] = mic_result;
             ringBufferIndex = (ringBufferIndex + 1) % RING_BUFFER_SIZE;
             taskEXIT_CRITICAL(&samplerMux);
+            int64_t t3 = esp_timer_get_time();
 
-          // Let CPU1 idle run periodically so the task watchdog can be serviced.
-          if (++sampleBatchCount >= 64) {
-            sampleBatchCount = 0;
-            vTaskDelay(pdMS_TO_TICKS(1));
-          }
+            int64_t mic_us = t1 - t0;
+            int64_t lis_us = t2 - t1;
+            int64_t crit_us = t3 - t2;
+            int64_t total_us = t3 - t0;
+
+            static uint32_t sampler_overrun_count = 0;
+            if (total_us > 500) {
+                sampler_overrun_count++;
+                if (debug_code || (sampler_overrun_count % 50 == 0)) {
+                    ESP_LOGW(TAG, "HighSpeedSampler overrun: %lld us (mic=%lld, lis=%lld, crit=%lld) total_overruns=%u",
+                             total_us, mic_us, lis_us, crit_us, sampler_overrun_count);
+                }
+            }
         }
     }
 }
@@ -363,14 +364,13 @@ void startMeasurementTask() {
   xTaskCreatePinnedToCore(
     measurementCollectorTask,
     "MeasurementCollector",
-    16384,         // Stack size (16 KB) - camera, thermal, and BME calls need more headroom
+    8192,         // Stack size (8 KB) - camera, thermal, and BME calls need more headroom
     NULL,           // Parameters
     2,              // Priority (higher than high-speed sampler)
     &measurementTaskHandle,
     0               // Core 0
   );
   ESP_LOGI(TAG, "Measurement task created on Core 0");
-    logTaskStackWatermarks("After measurement task create");
 }
 
 // Start the high-speed sampler task (continuous 2kHz accel + mic sampling)
@@ -379,11 +379,10 @@ void startHighSpeedSamplerTask() {
   xTaskCreatePinnedToCore(
     highSpeedSamplerTask,
     "HighSpeedSampler",
-    16384,          // Stack size (16 KB - safe for SPI + ADC operations)
+    8192,          // Stack size (8 KB - safe for SPI + ADC operations)
     NULL,           // Parameters
     0,            // High priority to ensure timely sampling
     &samplerTaskHandle,
     1               // Core 1 (dedicated to sampling, Core 0 free for SPI + measurement)
   );
-    logTaskStackWatermarks("After sampler task create");
 }
