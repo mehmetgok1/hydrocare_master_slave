@@ -1,24 +1,32 @@
-#include <Arduino.h>
-#include <SD.h>
-#include "config/config.h"
-#include "ui/ui.h"
-#include "measurement/measurement.h"
-#include "ble/ble.h"
-#include "timer/timer.h"
-#include "memory/memory.h"
-#include "ota/ota.h"
-#include "communication/communication.h"
-#include "wifi_stream/wifi_stream.h"
+#include "sd.h"
 
-bool deviceStatus = false; // false = stopped, true = logging
+
+void app_main(void) {
+  initPeripherals();
+  init_sd();
+  //initLed();
+  //initSD();
+  //uiInit();
+  //initmmWave();
+  //initBLE();
+  //initTimer();
+  //disableTimer();
+  //initSPIComm();
+  //vTaskDelay(pdMS_TO_TICKS(50));  // Allow tasks to initialize
+  
+  //while (1) {
+  //  receiveCommand();
+  //}
+}
+/*bool deviceStatus = false; // false = stopped, true = logging
 bool sessionInitialized = false; // true = session folders and files ready
 bool wifi_connect = false; // Flag to trigger WiFi connection in main loop
 bool stream_wifi = false; // Flag to trigger WiFi streaming after session ends
 uint16_t downsampled16x16[256];  // Shared with BLE for transmission
 uint16_t irFrame16x12[192];      // Shared with BLE for transmission
-bool debug_infos = false; // Set to true to enable detailed debug prints
+bool debug_infos = false; // Set to true to enable detailed debug prints*/
 // ==================== COMBINED DATA PACKET ====================
-#pragma pack(1)
+/*#pragma pack(1)
 typedef struct {
   float batteryLevel;             
   float batteryPercentage;        
@@ -32,16 +40,16 @@ typedef struct {
   uint16_t detectionDist;         
   SensorDataPacket slaveData;     
 } CombinedDataPacket;
-#pragma pack()
+#pragma pack()*/
 
-TaskHandle_t sdTaskHandle = NULL;
+/*TaskHandle_t sdTaskHandle = NULL;
 #define NUM_BUFFERS 3
 QueueHandle_t dataQueue = NULL;
 QueueHandle_t emptyQueue = NULL;
 CombinedDataPacket* packetBuffers[NUM_BUFFERS] = {NULL, NULL, NULL};
-uint32_t packetsLogged = 0;
+uint32_t packetsLogged = 0;*/
 
-// Creates new binary file every 50 packets (e.g., part_0.bin, part_50.bin, part_100.bin)
+/*// Creates new binary file every 50 packets (e.g., part_0.bin, part_50.bin, part_100.bin)
 void sdCardLoggingTask(void *parameter) {
   Serial.println("[SD-TASK] SD logging task started (BINARY mode - 50-packet rotation, safe Open/Close)");
 
@@ -184,18 +192,10 @@ void sdCardLoggingTask(void *parameter) {
     }
   }
 }
+*/
 
-void setup() {
-  initPins();
-  initPeripherals();
-  initLed();
-  initSD();
-  uiInit();
-  initmmWave();
-  initBLE();
-  initTimer();
-  disableTimer();
-  initSPIComm();
+/*void setup() {
+
   
   dataQueue = xQueueCreate(NUM_BUFFERS, sizeof(CombinedDataPacket*));
   emptyQueue = xQueueCreate(NUM_BUFFERS, sizeof(CombinedDataPacket*));
@@ -325,3 +325,4 @@ void loop() {
     timerStream = 0;
   }
 }
+*/

@@ -2,6 +2,7 @@
 #include <NimBLEDevice.h>
 #include <sys/time.h>
 #include <time.h>
+#include "nimble/nimble_port.h" // For native ESP-IDF NimBLE functions
 #include "measurement/measurement.h"
 #include "timer/timer.h"
 #include "ota/ota.h"
@@ -187,19 +188,21 @@ class ActionCallbacks: public NimBLECharacteristicCallbacks {
         }
     }
 };
-String getDynamicName() {
-    uint8_t mac[6];
-    esp_read_mac(mac, ESP_MAC_WIFI_STA);
-    char macStr[13];
-    sprintf(macStr, "%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
-    return "Urinfo_" + String(macStr);
-}
+
 void initBLE() {
-    String devName = getDynamicName();
-    Serial.printf("[BLE] Initializing: %s\n", devName.c_str());
+    // --- Native ESP-IDF BLE Initialization ---
+    // This demonstrates using ESP-IDF functions directly for more control.
+    nimble_port_init(); // Initialize the NimBLE stack (ESP-IDF native)
+
+    // Generate the dynamic device name using ESP-IDF APIs
+    uint8_t mac[6];
+    char devName[20]; // "Urinfo_XXXXXXXXXXXX" + null terminator
+    esp_read_mac(mac, ESP_MAC_WIFI_STA);
+    snprintf(devName, sizeof(devName), "Urinfo_%02X%02X%02X%02X%02X%02X", mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
     
-    // 1. Initialize with the dynamic name
-    NimBLEDevice::init(devName.c_str());
+    Serial.printf("[BLE] Initializing: %s\n", devName);
+
+    NimBLEDevice::init(devName); // Initialize the Arduino wrapper with the name
     NimBLEDevice::setPower(ESP_PWR_LVL_P9);
 
     NimBLEServer* pServer = NimBLEDevice::createServer();
@@ -242,14 +245,14 @@ void initBLE() {
     pAdv->addServiceUUID(SERVICE_UUID);
     pAdv->setScanResponse(true);
 
-    // FIX: Use devName.c_str() here instead of the hardcoded "Urinfo"
-    pAdv->setName(devName.c_str()); 
+    // The name is already set during NimBLEDevice::init()
+    // pAdv->setName(devName); // This is redundant if name is set in init()
 
     pAdv->setMinPreferred(0x06);
     pAdv->setMaxPreferred(0x12);
     pAdv->start();
 
-    Serial.printf("[BLE] %s is advertising (FW: %s)...\n", devName.c_str(), fw_version);
+    Serial.printf("[BLE] %s is advertising (FW: %s)...\n", devName, fw_version);
 }
 void sendValue(NimBLECharacteristic* chr, String val) {
     if (deviceConnected && chr != nullptr) {

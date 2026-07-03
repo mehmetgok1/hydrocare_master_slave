@@ -1,10 +1,28 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-void initPins();
-void initPeripherals();
+#include "driver/gpio.h"
+#include "esp_log.h"
+#include "driver/spi_master.h"
+#include "esp_adc/adc_oneshot.h"
+#include "esp_adc/adc_cali.h"
+#include "esp_adc/adc_cali_scheme.h"
+#include <string.h>
+#include "led_strip.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 
-extern String fw_version;
+//external function declarations
+void initPeripherals();
+led_strip_handle_t get_led_strip_handle(void)
+
+//definitions
+//extern String fw_version;
+
+//gpio pin definitions
+#define NUMPIXELS   1
+#define Neopixel    38
+
 #define AmbLight        1
 #define Batt_LVL        2
 #define PIR             3
