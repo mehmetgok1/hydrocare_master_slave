@@ -4,7 +4,18 @@
 static const char *TAG = "CONFIG";
 #define EXAMPLE_MAX_CHAR_SIZE    64
 
-//handles 
+
+// Static handles for the ADC driver and calibration to encapsulate them within this file.
+static adc_oneshot_unit_handle_t adc1_handle;
+static SemaphoreHandle_t adc_mutex = NULL;
+static adc_cali_handle_t adc1_cali_handle_chan0 = NULL;
+static adc_cali_handle_t adc1_cali_handle_chan1 = NULL;
+static adc_cali_handle_t adc1_cali_handle_chan2 = NULL;
+static bool adc_cali_enabled_chan0 = false;
+static bool adc_cali_enabled_chan1 = false;
+static bool adc_cali_enabled_chan2 = false;
+
+//led handle 
 static led_strip_handle_t main_led_strip = NULL;
 
 //forward declearation of functions
@@ -90,13 +101,113 @@ led_strip_handle_t init_led_strip(void)
     led_strip_handle_t led_strip;
     ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
     led_strip_clear(main_led_strip);
+    // Set the first pixel to a dim green to indicate successful initialization
+    led_strip_set_pixel(main_led_strip, 0, 0, 5, 0);
+    led_strip_refresh(main_led_strip);
+    //set finish
     vTaskDelay(pdMS_TO_TICKS(10));
     ESP_LOGI(TAG, "Created LED strip object with RMT backend");
     return led_strip;
 }
 
+static bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t atten, adc_cali_handle_t *out_handle)
+{
+    adc_cali_handle_t handle = NULL;
+    esp_err_t ret = ESP_FAIL;
+    bool calibrated = false;
+    if (!calibrated) {
+        ESP_LOGI(TAG, "calibration scheme version is %s", "Curve Fitting");
+        adc_cali_curve_fitting_config_t cali_config = {
+            .unit_id = unit,
+            .chan = channel,
+            .atten = atten,
+            .bitwidth = ADC_BITWIDTH_DEFAULT,
+        };
+        ret = adc_cali_create_scheme_curve_fitting(&cali_config, &handle);
+        if (ret == ESP_OK) {
+            calibrated = true;
+        }
+    }
+    *out_handle = handle;
+    return calibrated;
+}
+void init_adc_peripheral()
+{
+    adc_mutex = xSemaphoreCreateMutex();
+    if (!adc_mutex) {
+        ESP_LOGE(TAG, "Failed to create ADC mutex");
+        while (1) vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+
+    // ===== Initialize ADC1 for One-Shot Mode =====
+    adc_oneshot_unit_init_cfg_t init_config1 = {
+        .unit_id = ADC_UNIT_1,
+        .ulp_mode = ADC_ULP_MODE_DISABLE,
+    };
+    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
+
+    // ===== Configure ADC Channels =====
+    adc_oneshot_chan_cfg_t config = {
+        .bitwidth = ADC_BITWIDTH_12,
+        .atten = ADC_ATTEN_DB_12,
+    };
+    // AmbLight is on GPIO1 -> ADC1_CH0
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_0, &config)); // AmbLight on GPIO1
+    // battlevel is on GPIO2 -> ADC1_CH1
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_1, &config));
+    // PIR  is on GPIO3 -> ADC1_CH2
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_2, &config));
+    // ===== Initialize ADC Calibration =====
+    adc_cali_enabled_chan0 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_0, ADC_ATTEN_DB_12, &adc1_cali_handle_chan0);
+    adc_cali_enabled_chan1 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_1, ADC_ATTEN_DB_12, &adc1_cali_handle_chan1);
+    adc_cali_enabled_chan2 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_2, ADC_ATTEN_DB_12, &adc1_cali_handle_chan2);
+}
+
+
+
 // getter function for handler
 led_strip_handle_t get_led_strip_handle(void)
 {
     return main_led_strip;
+}
+
+adc_oneshot_unit_handle_t get_adc1_handle(void)
+{
+    return adc1_handle;
+}
+
+SemaphoreHandle_t get_adc_mutex(void)
+{
+    return adc_mutex;
+}
+
+adc_cali_handle_t get_adc1_cali_handle_chan0(void)
+{
+    return adc1_cali_handle_chan0;
+}
+
+adc_cali_handle_t get_adc1_cali_handle_chan1(void)
+{
+    return adc1_cali_handle_chan1;
+}
+
+adc_cali_handle_t get_adc1_cali_handle_chan2(void)
+{
+    return adc1_cali_handle_chan2;
+}
+
+// Add these getters:
+bool is_adc_cali_enabled_chan0(void)
+{
+    return adc_cali_enabled_chan0;
+}
+
+bool is_adc_cali_enabled_chan1(void)
+{
+    return adc_cali_enabled_chan1;
+}
+
+bool is_adc_cali_enabled_chan2(void)
+{
+    return adc_cali_enabled_chan2;
 }

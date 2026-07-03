@@ -14,8 +14,14 @@
 
 //external function declarations
 void initPeripherals();
-led_strip_handle_t get_led_strip_handle(void)
-
+led_strip_handle_t get_led_strip_handle(void);
+SemaphoreHandle_t get_adc_mutex(void);
+adc_cali_handle_t get_adc1_cali_handle_chan0(void);
+adc_cali_handle_t get_adc1_cali_handle_chan1(void);
+adc_cali_handle_t get_adc1_cali_handle_chan2(void);
+bool is_adc_cali_enabled_chan0(void);
+bool is_adc_cali_enabled_chan1(void);
+bool is_adc_cali_enabled_chan2(void);
 //definitions
 //extern String fw_version;
 
