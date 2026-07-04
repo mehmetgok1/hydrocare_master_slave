@@ -1,31 +1,19 @@
 #include "ble.h"
-#include <NimBLEDevice.h>
-#include <sys/time.h>
-#include <time.h>
-#include "nimble/nimble_port.h" // For native ESP-IDF NimBLE functions
-#include "measurement/measurement.h"
-#include "timer/timer.h"
-#include "ota/ota.h"
-#include "ui/ui.h"
-#include <esp_wifi.h>
-#include "memory/memory.h"
-#include "config/config.h"
-#include "communication/communication.h"
-#include "wifi_stream/wifi_stream.h"
+
 
 // --- Globals ---
-bool deviceConnected = false;
-bool sendRgbFlag = false;
-bool sendIrFlag = false;
-extern bool stream_wifi;
-extern String ssid, password, ver,server_ip; 
-extern bool wifi_connect;  // Flag to trigger WiFi connection in main loop
-extern bool sessionInitialized;  // Set to true when folder/files are ready
-extern uint32_t packetsLogged;   // Bring in the packet counter so we can reset it
-// External buffers from main.cpp and communication functions
-extern uint16_t downsampled16x16[256];  // 16x16 downsampled RGB frame
-extern uint16_t irFrame16x12[192];      // 16x12 IR thermal frame
-
+//bool deviceConnected = false;
+//bool sendRgbFlag = false;
+//bool sendIrFlag = false;
+//extern bool stream_wifi;
+//extern String ssid, password, ver,server_ip; 
+//extern bool wifi_connect;  // Flag to trigger WiFi connection in main loop
+//extern bool sessionInitialized;  // Set to true when folder/files are ready
+//extern uint32_t packetsLogged;   // Bring in the packet counter so we can reset it
+//// External buffers from main.cpp and communication functions
+//extern uint16_t downsampled16x16[256];  // 16x16 downsampled RGB frame
+//extern uint16_t irFrame16x12[192];      // 16x12 IR thermal frame
+/*
 // Characteristic Pointers
 NimBLECharacteristic *pBatChar, *pLuxChar, *pPirChar, *pMmwaveChar, *pActionChar, *pVerChar, *pAmbIntChar;
 NimBLECharacteristic *pRgbChar;
@@ -187,14 +175,43 @@ class ActionCallbacks: public NimBLECharacteristicCallbacks {
             }
         }
     }
-};
+};*/
 
-void initBLE() {
-    // --- Native ESP-IDF BLE Initialization ---
-    // This demonstrates using ESP-IDF functions directly for more control.
-    nimble_port_init(); // Initialize the NimBLE stack (ESP-IDF native)
+void init_ble() {
+    BaseType_t rc = 0;
+    esp_err_t ret;
+    ret = nvs_flash_init();
+    if (ret == ESP_ERR_NVS_NO_FREE_PAGES ||
+        ret == ESP_ERR_NVS_NEW_VERSION_FOUND) {
+        ESP_ERROR_CHECK(nvs_flash_erase());
+        ret = nvs_flash_init();
+    }
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "failed to initialize nvs flash, error code: %d ", ret);
+        return;
+    }
+    /* NimBLE stack initialization */
+    ret = nimble_port_init();
+    if (ret != ESP_OK) {
+        ESP_LOGE(TAG, "failed to initialize nimble stack, error code: %d ",
+                 ret);
+        return;
+    }
+    /* GAP service initialization */
+    rc = gap_init();
+    if (rc != 0) {
+        ESP_LOGE(TAG, "failed to initialize GAP service, error code: %d", rc);
+        return;
+    }
+    /* GATT server initialization */
+    rc = gatt_svc_init();
+    if (rc != 0) {
+        ESP_LOGE(TAG, "failed to initialize GATT server, error code: %d", rc);
+        return;
+    }
 
-    // Generate the dynamic device name using ESP-IDF APIs
+}
+    /*// Generate the dynamic device name using ESP-IDF APIs
     uint8_t mac[6];
     char devName[20]; // "Urinfo_XXXXXXXXXXXX" + null terminator
     esp_read_mac(mac, ESP_MAC_WIFI_STA);
@@ -345,4 +362,4 @@ void notifyAll() {
       Serial.println("[BLE] Notifying all sensors...");
     }
     sendDownsampledImages();
-}
+}*/
