@@ -1,15 +1,10 @@
 #ifndef LED_H
 #define LED_H
+#include "config.h"
 
-#include <Arduino.h>
-#include "measurement/measurement.h"
-
-extern uint8_t red, green, blue;
-
-void initLed();
-void uiInit();
-void uiChargingScenario();
-void setLED();
-void uiOTAStarted();
+void uiInit(uint8_t *red, uint8_t *green, uint8_t *blue);
+void uiChargingScenario(uint8_t *red, uint8_t *green, uint8_t *blue);
+void setLED(uint8_t *red, uint8_t *green, uint8_t *blue);
+void uiOTAStarted(uint8_t *red, uint8_t *green, uint8_t *blue);
 
 #endif

@@ -16,19 +16,19 @@ static bool adc_cali_enabled_chan1 = false;
 static bool adc_cali_enabled_chan2 = false;
 
 //led handle 
-static led_strip_handle_t main_led_strip = NULL;
+led_strip_handle_t main_led_strip = NULL;
 
 //forward declearation of functions
 void initPins();
 void init_mmWave();
 void init_adc_peripheral();
 
-led_strip_handle_t init_led_strip();
+void init_led_strip();
 
 void initPeripherals(){
   // This function should be called first from app_main to set up hardware.
   initPins();
-  main_led_strip = init_led_strip();
+  init_led_strip();
   init_mmWave();
 
   ESP_LOGI(TAG, "Core peripherals initialized.");
@@ -76,7 +76,7 @@ void initPins(){
   gpio_set_level((gpio_num_t)SPI_CS, 1);
   ESP_LOGI(TAG, "GPIO pins initialized using native gpio_config()");
 }
-led_strip_handle_t init_led_strip(void)
+void init_led_strip(void)
 {    // LED strip general initialization, according to your led board design
     led_strip_config_t strip_config = {
         .strip_gpio_num = Neopixel, // The GPIO that connected to the LED strip's data line
@@ -106,7 +106,6 @@ led_strip_handle_t init_led_strip(void)
     //set finish
     vTaskDelay(pdMS_TO_TICKS(10));
     ESP_LOGI(TAG, "Created LED strip object with RMT backend");
-    return led_strip;
 }
 
 static bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t atten, adc_cali_handle_t *out_handle)
@@ -169,7 +168,7 @@ void init_mmWave() {
 
     // Configure UART parameters
     uart_config_t uart_config = {
-        .baud_rate = 115200, // Assuming a standard baud rate, replace with RADAR_BAUD if defined
+        .baud_rate = 256000, // Assuming a standard baud rate, replace with RADAR_BAUD if defined
         .data_bits = UART_DATA_8_BITS,
         .parity    = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
