@@ -7,6 +7,20 @@
 #include "gatt_svc.h"
 #include "common.h"
 
+
+//// --- Service UUID ---
+//#define SERVICE_UUID        "11111111-1111-1111-1111-111111111110"
+//// --- Characteristic UUIDs ---
+//#define UUID_BATTERY        "11111111-1111-1111-2222-111111111112"
+//#define UUID_LUX            "11111111-1111-1111-2222-111111111113"
+//#define UUID_PIR            "11111111-1111-1111-2222-111111111114"
+//#define UUID_MMWAVE         "11111111-1111-1111-2222-111111111115"
+//#define UUID_ACTION         "11111111-1111-1111-2222-111111111116"
+//#define UUID_VERSION        "11111111-1111-1111-2222-111111111117"
+//#define UUID_AMB_INT        "11111111-1111-1111-2222-111111111118"
+//#define UUID_RGB            "c2a969f6-16e9-4e08-99e7-5e6086f6a546" // Custom UUID for RGB Frame
+//#define UUID_IR             "d3b969f6-16e9-4e08-99e7-5e6086f6a547" // Custom UUID for IR Frame
+
 /* Private function declarations */
 static int gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                struct ble_gatt_access_ctxt *ctxt, void *arg);
@@ -83,10 +97,7 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
               .access_cb = gatt_svr_chr_access,
               .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY},
              {0} /* No more characteristics in this service */
-         }},
-    {
-        0, /* No more services. */
-    },
+         }}
 };
 
 /* Private functions */
@@ -117,12 +128,6 @@ static int gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
     default:
         return BLE_ATT_ERR_UNLIKELY;
     }
-}
-
-/* Public functions */
-void send_heart_rate_indication(void) {
-    // This function is now obsolete with the new service structure.
-    // You will need a new mechanism to send notifications for your custom characteristics.
 }
 
 /*
@@ -181,10 +186,6 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event)
              event->subscribe.reason, event->subscribe.prev_notify,
              event->subscribe.cur_notify, event->subscribe.prev_indicate,
              event->subscribe.cur_indicate);
-}
-
-void gatt_svr_reset_heart_rate_subscription(void) {
-    // This function is now obsolete.
 }
 
 /*
