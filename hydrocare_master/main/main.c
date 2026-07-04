@@ -4,8 +4,6 @@
 void app_main(void) {
   initPeripherals();
   init_sd();
-  //initLed();
-  //initSD();
   //uiInit();
   //initmmWave();
   //initBLE();

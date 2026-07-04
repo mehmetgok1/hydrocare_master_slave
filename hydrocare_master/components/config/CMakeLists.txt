@@ -5,4 +5,5 @@ idf_component_register(SRCS "config.c"
                         esp_driver_spi
                         esp_adc
                         led_strip
+                        esp_driver_uart
 )

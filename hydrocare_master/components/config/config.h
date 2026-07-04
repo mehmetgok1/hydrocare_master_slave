@@ -11,11 +11,13 @@
 #include "led_strip.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "driver/uart.h"
 
 //external function declarations
 void initPeripherals();
 led_strip_handle_t get_led_strip_handle(void);
 SemaphoreHandle_t get_adc_mutex(void);
+adc_oneshot_unit_handle_t get_adc1_handle(void);
 adc_cali_handle_t get_adc1_cali_handle_chan0(void);
 adc_cali_handle_t get_adc1_cali_handle_chan1(void);
 adc_cali_handle_t get_adc1_cali_handle_chan2(void);

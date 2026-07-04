@@ -20,17 +20,16 @@ static led_strip_handle_t main_led_strip = NULL;
 
 //forward declearation of functions
 void initPins();
+void init_mmWave();
+void init_adc_peripheral();
+
 led_strip_handle_t init_led_strip();
+
 void initPeripherals(){
   // This function should be called first from app_main to set up hardware.
   initPins();
-  init_led_strip();
-  // NOTE: SPI bus initialization is now handled by the specific drivers
-  // that use it (e.g., `initSPIComm()` and `initSD()`). We do not initialize it here.
-
-  // Configure ADC1 Channel 0 (GPIO 1) for the Ambient Light sensor.
-  //ESP_ERROR_CHECK(adc1_config_width(ADC_WIDTH_BIT_12));
-  //ESP_ERROR_CHECK(adc1_config_channel_atten(ADC1_CHANNEL_0, ADC_ATTEN_DB_11));
+  main_led_strip = init_led_strip();
+  init_mmWave();
 
   ESP_LOGI(TAG, "Core peripherals initialized.");
 }
@@ -163,6 +162,28 @@ void init_adc_peripheral()
     adc_cali_enabled_chan2 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_2, ADC_ATTEN_DB_12, &adc1_cali_handle_chan2);
 }
 
+void init_mmWave() {
+    // Set Sensor_EN pin to LOW to enable the sensor
+    gpio_set_level((gpio_num_t)Sensor_EN, 0);
+    vTaskDelay(pdMS_TO_TICKS(100));
+
+    // Configure UART parameters
+    uart_config_t uart_config = {
+        .baud_rate = 115200, // Assuming a standard baud rate, replace with RADAR_BAUD if defined
+        .data_bits = UART_DATA_8_BITS,
+        .parity    = UART_PARITY_DISABLE,
+        .stop_bits = UART_STOP_BITS_1,
+        .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
+    };
+    
+    // Install UART driver, and get the queue.
+    ESP_ERROR_CHECK(uart_driver_install(UART_NUM_1, 256 * 2, 0, 0, NULL, 0));
+    ESP_ERROR_CHECK(uart_param_config(UART_NUM_1, &uart_config));
+    ESP_ERROR_CHECK(uart_set_pin(UART_NUM_1, mmWave_TX, mmWave_RX, -1, -1));
+    vTaskDelay(pdMS_TO_TICKS(100));
+}
+
 
 
 // getter function for handler
@@ -196,7 +217,6 @@ adc_cali_handle_t get_adc1_cali_handle_chan2(void)
     return adc1_cali_handle_chan2;
 }
 
-// Add these getters:
 bool is_adc_cali_enabled_chan0(void)
 {
     return adc_cali_enabled_chan0;
