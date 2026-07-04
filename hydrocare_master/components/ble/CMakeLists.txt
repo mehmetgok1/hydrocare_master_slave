@@ -4,6 +4,8 @@ idf_component_register(SRCS "${srcs}"
                     REQUIRES
                         sdcard
                         wifi_stream
+                        communication
+                        measurement
                         ui
                         ota
                         bt
