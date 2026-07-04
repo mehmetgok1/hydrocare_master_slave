@@ -1,8 +1,6 @@
 #include "ota.h"
 
 // --- Configuration ---
-//#define WIFI_SSID      "YOUR_WIFI_SSID"
-//#define WIFI_PASS      "YOUR_WIFI_PASSWORD"
 #define FIRMWARE_VER   "v1.0.1" // Example version
 
 static const char *TAG = "OTA_UPDATER";
