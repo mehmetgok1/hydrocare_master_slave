@@ -1,8 +1,16 @@
 #ifndef COMMUNICATION_H
 #define COMMUNICATION_H
+#include "config.h"
+#include <stdio.h>
+#include <string.h>
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "driver/spi_master.h"
+#include "driver/gpio.h"
+#include "esp_log.h"
+#include "esp_timer.h"
+#include "esp_rom_sys.h" // For esp_rom_delay_us
 
-#include <Arduino.h>
-#include <SPI.h>
 
 // ==================== PROTOCOL STRUCTURE ====================
 // Master-Slave SPI Protocol

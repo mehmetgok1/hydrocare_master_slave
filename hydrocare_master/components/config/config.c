@@ -22,15 +22,14 @@ led_strip_handle_t main_led_strip = NULL;
 void initPins();
 void init_mmWave();
 void init_adc_peripheral();
-
 void init_led_strip();
 
 void initPeripherals(){
   // This function should be called first from app_main to set up hardware.
   initPins();
   init_led_strip();
+  init_adc_peripheral();
   init_mmWave();
-
   ESP_LOGI(TAG, "Core peripherals initialized.");
 }
 
