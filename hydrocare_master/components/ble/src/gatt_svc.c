@@ -5,6 +5,10 @@
  */
 /* Includes */
 #include "gatt_svc.h"
+#include "sd.h"
+#include "measurement/measurement.h"
+#include "communication/communication.h"
+#include <sys/time.h>
 #include "common.h"
 
 
@@ -24,6 +28,19 @@
 /* Private function declarations */
 static int gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                struct ble_gatt_access_ctxt *ctxt, void *arg);
+static void handle_action_write(struct os_mbuf *om);
+
+/* Extern variables from other parts of the application */
+extern bool deviceConnected;
+extern bool sendRgbFlag;
+extern bool sendIrFlag;
+extern bool stream_wifi;
+extern char ssid[32], password[64], ver[16], server_ip[16];
+extern bool wifi_connect;
+extern bool sessionInitialized;
+extern uint32_t packetsLogged;
+extern int otaUpdateAvailable;
+extern uint8_t deviceStatus;
 
 /* Private variables */
 
@@ -100,6 +117,140 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
          }}
 };
 
+/* Command handler for writes to the action characteristic */
+static void handle_action_write(struct os_mbuf *om) {
+    char command[256];
+    size_t len;
+
+    len = os_mbuf_len(om);
+    if (len >= sizeof(command)) {
+        ESP_LOGE(TAG, "Command too long");
+        return;
+    }
+
+    if (os_mbuf_copydata(om, 0, len, command) != 0) {
+        return;
+    }
+    command[len] = '\0';
+
+    ESP_LOGI(TAG, "[BLE] Command Received: %s", command);
+
+    if (strncmp(command, "Com;OTA", 7) == 0) {
+        char *p1 = strchr(command, ';');
+        if (p1) {
+            char *p2 = strchr(p1 + 1, ';');
+            if (p2) {
+                char *p3 = strchr(p2 + 1, ';');
+                if (p3) {
+                    char *p4 = strchr(p3 + 1, ';');
+                    if (p4) {
+                        strncpy(ver, p2 + 1, p3 - (p2 + 1));
+                        ver[p3 - (p2 + 1)] = '\0';
+                        strncpy(ssid, p3 + 1, p4 - (p3 + 1));
+                        ssid[p4 - (p3 + 1)] = '\0';
+                        strcpy(password, p4 + 1);
+
+                        ESP_LOGI(TAG, "[OTA] Starting Update...");
+                        ESP_LOGI(TAG, "SSID: %s, Ver: %s", ssid, ver);
+                        otaUpdateAvailable = 1;
+                    }
+                }
+            }
+        }
+    } else if (strncmp(command, "Com;Start", 9) == 0) {
+        // char* label = "Default";
+        // char* p1 = strchr(command, ';');
+        // if (p1) {
+        //     char* p2 = strchr(p1 + 1, ';');
+        //     if (p2 && strlen(p2 + 1) > 0) {
+        //         label = p2 + 1;
+        //         // trim whitespace if necessary
+        //     }
+        // }
+        deviceStatus = 1;
+        ESP_LOGI(TAG, "\n[BLE] Logging started - Creating new session folder...");
+        // initSessionFolder(); // This function needs to be available
+        packetsLogged = 0;
+        sessionInitialized = true;
+        ESP_LOGI(TAG, "[BLE] Session files ready for logging");
+    } else if (strncmp(command, "Com;Stop", 8) == 0) {
+        deviceStatus = 0;
+        sessionInitialized = false;
+        ESP_LOGI(TAG, "[SD] Stop Logging. files will be transmitted over TCP socket.");
+        stream_wifi = true;
+    } else if (strncmp(command, "Com;WiFi", 8) == 0) {
+        char *p1 = strchr(command, ';');
+        if (p1) {
+            char *p2 = strchr(p1 + 1, ';');
+            if (p2) {
+                char *p3 = strchr(p2 + 1, ';');
+                if (p3) {
+                    char *p4 = strchr(p3 + 1, ';');
+                    if (p4) {
+                        strncpy(ssid, p2 + 1, p3 - (p2 + 1));
+                        ssid[p3 - (p2 + 1)] = '\0';
+                        strncpy(password, p3 + 1, p4 - (p3 + 1));
+                        password[p4 - (p3 + 1)] = '\0';
+                        strcpy(server_ip, p4 + 1);
+                        ESP_LOGI(TAG, "[BLE] WiFi Config updated: %s, Server: %s:8080", ssid, server_ip);
+                        wifi_connect = true;
+                    }
+                }
+            }
+        }
+    } else if (strncmp(command, "Com;Control", 11) == 0) {
+        char *p1 = strchr(command, ';');
+        if (p1) {
+            char *p2 = strchr(p1 + 1, ';');
+            if (p2) {
+                char *p3 = strchr(p2 + 1, ';');
+                if (p3) {
+                    char type[16];
+                    strncpy(type, p2 + 1, p3 - (p2 + 1));
+                    type[p3 - (p2 + 1)] = '\0';
+                    int val = atoi(p3 + 1);
+
+                    ESP_LOGI(TAG, "[BLE] Control %s: %d", type, val);
+                    if (strcmp(type, "IR") == 0) {
+                        ESP_LOGI(TAG, "IR LED status is %d", val);
+                        sendIRLED(val);
+                    }
+                    if (strcmp(type, "LED") == 0) {
+                        ESP_LOGI(TAG, "Power LED brightness is %d", val);
+                        sendBrightness(val);
+                    }
+                }
+            }
+        }
+    } else if (strncmp(command, "Com;RGB", 7) == 0) {
+        ESP_LOGI(TAG, "[BLE] Command RGB received. Queueing frame transmission...");
+        sendRgbFlag = true;
+    } else if (strncmp(command, "Com;Frames", 10) == 0) {
+        ESP_LOGI(TAG, "[BLE] Command Frames received. Queueing RGB and IR frame transmission...");
+        sendRgbFlag = true;
+        sendIrFlag = true;
+    } else if (strncmp(command, "Com;SetTime", 11) == 0) {
+        char *p1 = strchr(command, ';');
+        if (p1) {
+            char *p2 = strchr(p1 + 1, ';');
+            if (p2) {
+                time_t timestamp = atol(p2 + 1);
+                if (timestamp > 0) {
+                    struct timeval tv = {.tv_sec = timestamp, .tv_usec = 0};
+                    settimeofday(&tv, NULL);
+
+                    time_t now = time(NULL);
+                    char timeStr[30];
+                    strftime(timeStr, sizeof(timeStr), "%Y%m%d_%H%M%S", localtime(&now));
+                    ESP_LOGI(TAG, "[BLE] System time set to: %s", timeStr);
+                } else {
+                    ESP_LOGE(TAG, "[BLE] Invalid timestamp");
+                }
+            }
+        }
+    }
+}
+
 /* Private functions */
 static int gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                struct ble_gatt_access_ctxt *ctxt, void *arg) {
@@ -117,13 +268,9 @@ static int gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
     case BLE_GATT_ACCESS_OP_WRITE_CHR:
         ESP_LOGI(TAG, "Characteristic write; conn_handle=%d, attr_handle=%d",
                  conn_handle, attr_handle);
-        // This is where you would handle incoming commands, similar to your
-        // ActionCallbacks::onWrite method. You can inspect the UUID to know
-        // which characteristic was written to.
-        // For example:
-        // if (ble_uuid_cmp(&ctxt->chr->uuid, &gatt_action_uuid.u) == 0) {
-        //     // process command in ctxt->om
-        // }
+        if (ble_uuid_cmp(ctxt->chr->uuid, &gatt_action_uuid.u) == 0) {
+            handle_action_write(ctxt->om);
+        }
         return 0;
     default:
         return BLE_ATT_ERR_UNLIKELY;

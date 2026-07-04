@@ -176,6 +176,42 @@ class ActionCallbacks: public NimBLECharacteristicCallbacks {
         }
     }
 };*/
+/* Library function declarations */
+void ble_store_config_init(void);
+
+/* Private functions */
+static void on_stack_reset(int reason) {
+    /* On reset, print reset reason to console */
+    ESP_LOGI(TAG, "nimble stack reset, reset reason: %d", reason);
+}
+
+static void on_stack_sync(void) {
+    /* On stack sync, do advertising initialization */
+    adv_init();
+}
+
+static void nimble_host_config_init(void) {
+    /* Set host callbacks */
+    ble_hs_cfg.reset_cb = on_stack_reset;
+    ble_hs_cfg.sync_cb = on_stack_sync;
+    ble_hs_cfg.gatts_register_cb = gatt_svr_register_cb;
+    ble_hs_cfg.store_status_cb = ble_store_util_status_rr;
+
+    /* Store host configuration */
+    ble_store_config_init();
+}
+
+static void nimble_host_task(void *param) {
+    /* Task entry log */
+    ESP_LOGI(TAG, "nimble host task has been started!");
+
+    /* This function won't return until nimble_port_stop() is executed */
+    nimble_port_run();
+
+    /* Clean up at exit */
+    vTaskDelete(NULL);
+}
+
 
 void init_ble() {
     BaseType_t rc = 0;
@@ -207,6 +243,16 @@ void init_ble() {
     rc = gatt_svc_init();
     if (rc != 0) {
         ESP_LOGE(TAG, "failed to initialize GATT server, error code: %d", rc);
+        return;
+    }
+    /* NimBLE host configuration initialization */
+    nimble_host_config_init();
+
+    /* Start NimBLE host task thread and return */
+    rc = xTaskCreate(nimble_host_task, "NimBLE Host", 4 * 1024, NULL,
+                                5, NULL);
+    if (rc != pdPASS) {
+        ESP_LOGE(TAG, "failed to create NimBLE host task");
         return;
     }
 

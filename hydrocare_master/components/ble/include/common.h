@@ -29,9 +29,8 @@
 #include "nimble/ble.h"
 #include "nimble/nimble_port.h"
 #include "nimble/nimble_port_freertos.h"
-
+#include "esp_mac.h"
 /* Defines */
 #define TAG "BLE-nimble"
-#define DEVICE_NAME "NimBLE_GATT"
     
 #endif // COMMON_H
