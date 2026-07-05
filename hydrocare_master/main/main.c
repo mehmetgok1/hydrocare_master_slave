@@ -1,6 +1,7 @@
 #include "ble.h"
 #include "esp_log.h"
 #include "freertos/idf_additions.h"
+#include "gatt_svc.h"
 
 const char *TAG2 = "MAIN";
 
@@ -29,11 +30,9 @@ TaskHandle_t sdTaskHandle = NULL;
 QueueHandle_t dataQueue = NULL;
 QueueHandle_t emptyQueue = NULL;
 CombinedDataPacket* packetBuffers[NUM_BUFFERS] = {NULL, NULL, NULL};
-uint32_t packetsLogged = 0;
 
 void sdCardLoggingTask(void *parameter);
 void loop();
-
 
 //intermediate values
 uint16_t batteryLevel;
@@ -45,6 +44,8 @@ uint8_t movingEnergy;
 uint16_t staticDist; 
 uint8_t staticEnergy; 
 uint16_t detectionDist;
+
+
 void app_main(void) {
   initPeripherals();
   init_sd();
@@ -105,7 +106,7 @@ void sdCardLoggingTask(void *parameter) {
             }
             
             // Calculate which part file to use (every 50 packets = new file)
-            uint32_t fileIndex = (packetsLogged / 50) * 50;
+            uint32_t fileIndex = (*get_packetsLogged() / 50) * 50;
             
             // Only open a new file if we crossed the 50-packet boundary or starting fresh
             if (fileIndex != currentFileIndex || df == NULL) {
@@ -203,12 +204,12 @@ void sdCardLoggingTask(void *parameter) {
                              sizeof(CombinedDataPacket), totalWritten);
             }
             
-            packetsLogged++;
+            *get_packetsLogged()=*get_packetsLogged()+1;
             int64_t taskDuration = (esp_timer_get_time() - taskStart) / 1000; // Convert to milliseconds
             
             if(debug_infos) {
                 ESP_LOGI(TAG2, "[SD-TASK] Packet #%lu | Write: %lld us | Total: %lld ms",
-                             packetsLogged, writeTime, taskDuration);
+                             *get_packetsLogged(), writeTime, taskDuration);
             }
             
             xQueueSend(emptyQueue, &packetToWrite, 0);
@@ -271,7 +272,7 @@ void loop() {
     
     ESP_LOGI(TAG2, "[MAIN] Buffers fully freed. Starting Wi-Fi TCP stream.");
     deallocateSPIBuffer();
-    streamFolderToTCP(get_sessionFolder(),get_server_ip());
+    stream_folder_to_tcp(get_sessionFolder(),get_server_ip());
     *get_stream_wifi() = false;
   }
   if (get_deviceConnected() && timerStream == 1 && get_deviceStatus() == 1 && get_sessionInitialized()) {

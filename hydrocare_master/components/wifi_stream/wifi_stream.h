@@ -5,5 +5,5 @@
 #include "sd.h"
 #include "esp_timer.h"
 
-void streamFolderToTCP(char* folderName,char* serverIp);
+void stream_folder_to_tcp(const char* folder_name,char* server_ip);
 #endif

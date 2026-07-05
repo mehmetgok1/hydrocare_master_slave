@@ -12,6 +12,7 @@
 #include "gatt_svc.h"
 #include "timer.h"
 
+
 // --- Function Declarations ---
 void init_ble();
 void notifyAll(uint8_t bat, uint16_t lux, uint8_t pir, uint8_t mmwave, uint16_t amb_int, 
