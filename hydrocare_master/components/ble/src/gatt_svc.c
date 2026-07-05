@@ -5,9 +5,9 @@
  */
 /* Includes */
 #include "gatt_svc.h"
-#include "sd.h"
 #include <sys/time.h>
 #include "common.h"
+#include "ble.h"
 
 
 //// --- Service UUID ---
@@ -116,7 +116,7 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
 };
 
 /* Command handler for writes to the action characteristic */
-/*static void handle_action_write(struct os_mbuf *om) {
+static void handle_action_write(struct os_mbuf *om) {
     char command[256];
     size_t len;
 
@@ -248,7 +248,7 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
         }
     }
 }
-*/
+
 /* Private functions */
 static int gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                struct ble_gatt_access_ctxt *ctxt, void *arg) {
@@ -267,7 +267,7 @@ static int gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
         ESP_LOGI(TAG, "Characteristic write; conn_handle=%d, attr_handle=%d",
                  conn_handle, attr_handle);
         if (ble_uuid_cmp(ctxt->chr->uuid, &gatt_action_uuid.u) == 0) {
-            //handle_action_write(ctxt->om);
+            handle_action_write(ctxt->om);
         }
         return 0;
     default:
