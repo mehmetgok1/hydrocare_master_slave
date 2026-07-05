@@ -9,6 +9,8 @@
 #include "gatt_svc.h"
 
 /* Private function declarations */
+uint16_t global_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+
 inline static void format_addr(char *addr_str, uint8_t addr[]);
 static void print_conn_desc(struct ble_gap_conn_desc *desc);
 static void start_advertising(void);
@@ -148,6 +150,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
         /* Connection succeeded */
         if (event->connect.status == 0) {
             /* Check connection handle */
+            global_conn_handle = event->connect.conn_handle;
             rc = ble_gap_conn_find(event->connect.conn_handle, &desc);
             if (rc != 0) {
                 ESP_LOGE(TAG,
@@ -307,7 +310,7 @@ int gap_init(void) {
     ble_svc_gap_init();
 
     /* Set GAP device name */
-    char device_name[40]; 
+    static char device_name[40]; 
     getDynamicName(device_name, sizeof(device_name));
     rc = ble_svc_gap_device_name_set(device_name);
     if (rc != 0) {
@@ -316,4 +319,8 @@ int gap_init(void) {
         return rc;
     }
     return rc;
+}
+
+uint16_t* get_connection_handle(void) {
+    return &global_conn_handle;
 }

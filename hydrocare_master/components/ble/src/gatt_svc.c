@@ -1,46 +1,37 @@
-/*
- * SPDX-FileCopyrightText: 2024-2025 Espressif Systems (Shanghai) CO LTD
- *
- * SPDX-License-Identifier: Unlicense OR CC0-1.0
- */
-/* Includes */
-#include "gatt_svc.h"
-#include <sys/time.h>
-#include "common.h"
 #include "ble.h"
-
-
-//// --- Service UUID ---
-//#define SERVICE_UUID        "11111111-1111-1111-1111-111111111110"
-//// --- Characteristic UUIDs ---
-//#define UUID_BATTERY        "11111111-1111-1111-2222-111111111112"
-//#define UUID_LUX            "11111111-1111-1111-2222-111111111113"
-//#define UUID_PIR            "11111111-1111-1111-2222-111111111114"
-//#define UUID_MMWAVE         "11111111-1111-1111-2222-111111111115"
-//#define UUID_ACTION         "11111111-1111-1111-2222-111111111116"
-//#define UUID_VERSION        "11111111-1111-1111-2222-111111111117"
-//#define UUID_AMB_INT        "11111111-1111-1111-2222-111111111118"
-//#define UUID_RGB            "c2a969f6-16e9-4e08-99e7-5e6086f6a546" // Custom UUID for RGB Frame
-//#define UUID_IR             "d3b969f6-16e9-4e08-99e7-5e6086f6a547" // Custom UUID for IR Frame
 
 /* Private function declarations */
 static int gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                struct ble_gatt_access_ctxt *ctxt, void *arg);
 static void handle_action_write(struct os_mbuf *om);
 
-/* Extern variables from other parts of the application */
-extern bool deviceConnected;
-extern bool sendRgbFlag;
-extern bool sendIrFlag;
-extern bool stream_wifi;
-extern char ssid[32], password[64], ver[16], server_ip[16];
-extern bool wifi_connect;
-extern bool sessionInitialized;
-extern uint32_t packetsLogged;
-extern int otaUpdateAvailable;
-extern uint8_t deviceStatus;
 
-/* Private variables */
+
+/* Characteristic value handles (used for sending notifications) */
+uint16_t bat_val_handle;
+uint16_t lux_val_handle;
+uint16_t pir_val_handle;
+uint16_t mmwave_val_handle;
+uint16_t amb_int_val_handle;
+uint16_t rgb_val_handle;
+uint16_t ir_val_handle;
+
+/* credentials */
+char* ssid = NULL;
+char* password = NULL;
+char* ver = NULL;
+char* server_ip = NULL;
+char sessionFolder[64] = "session_default";
+// --- Globals ---
+bool deviceStatus = false; // false = stopped, true = logging
+bool otaUpdateAvailable = false;
+bool deviceConnected = false;
+bool sendRgbFlag = false;
+bool sendIrFlag = false;
+bool stream_wifi =false ; 
+bool wifi_connect = false;  // Flag to trigger WiFi connection in main loop
+bool sessionInitialized = false;  // Set to true when folder/files are ready
+uint32_t packetsLogged = 0;   // Bring in the packet counter so we can reset it
 
 /* Custom Service UUID */
 static const ble_uuid128_t gatt_svc_uuid =
@@ -89,28 +80,35 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
               .flags = BLE_GATT_CHR_F_READ},
              {.uuid = &gatt_bat_uuid.u,
               .access_cb = gatt_svr_chr_access,
-              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY},
+              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+              .val_handle = &bat_val_handle},
              {.uuid = &gatt_lux_uuid.u,
               .access_cb = gatt_svr_chr_access,
-              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY},
+              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+              .val_handle = &lux_val_handle},
              {.uuid = &gatt_pir_uuid.u,
               .access_cb = gatt_svr_chr_access,
-              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY},
+              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+              .val_handle = &pir_val_handle},
              {.uuid = &gatt_mmwave_uuid.u,
               .access_cb = gatt_svr_chr_access,
-              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY},
+              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+              .val_handle = &mmwave_val_handle},
              {.uuid = &gatt_amb_int_uuid.u,
               .access_cb = gatt_svr_chr_access,
-              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY},
+              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+              .val_handle = &amb_int_val_handle},
              {.uuid = &gatt_action_uuid.u,
               .access_cb = gatt_svr_chr_access,
               .flags = BLE_GATT_CHR_F_WRITE},
              {.uuid = &gatt_rgb_uuid.u,
               .access_cb = gatt_svr_chr_access,
-              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY},
+              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+              .val_handle = &rgb_val_handle},
              {.uuid = &gatt_ir_uuid.u,
               .access_cb = gatt_svr_chr_access,
-              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY},
+              .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
+              .val_handle = &ir_val_handle},
              {0} /* No more characteristics in this service */
          }}
 };
@@ -150,24 +148,21 @@ static void handle_action_write(struct os_mbuf *om) {
 
                         ESP_LOGI(TAG, "[OTA] Starting Update...");
                         ESP_LOGI(TAG, "SSID: %s, Ver: %s", ssid, ver);
-                        otaUpdateAvailable = 1;
+                        otaUpdateAvailable = true;
                     }
                 }
             }
         }
     } else if (strncmp(command, "Com;Start", 9) == 0) {
-        // char* label = "Default";
-        // char* p1 = strchr(command, ';');
-        // if (p1) {
-        //     char* p2 = strchr(p1 + 1, ';');
-        //     if (p2 && strlen(p2 + 1) > 0) {
-        //         label = p2 + 1;
-        //         // trim whitespace if necessary
-        //     }
-        // }
         deviceStatus = 1;
         ESP_LOGI(TAG, "\n[BLE] Logging started - Creating new session folder...");
-        // initSessionFolder(); // This function needs to be available
+        time_t now;
+        struct tm timeinfo;
+        // 1. Get current time
+        time(&now);
+        // 2. Convert to local time
+        localtime_r(&now, &timeinfo);
+        strftime(sessionFolder, sizeof(sessionFolder), "%y%m", &timeinfo);
         packetsLogged = 0;
         sessionInitialized = true;
         ESP_LOGI(TAG, "[BLE] Session files ready for logging");
@@ -204,8 +199,15 @@ static void handle_action_write(struct os_mbuf *om) {
                 char *p3 = strchr(p2 + 1, ';');
                 if (p3) {
                     char type[16];
-                    strncpy(type, p2 + 1, p3 - (p2 + 1));
-                    type[p3 - (p2 + 1)] = '\0';
+                    size_t type_len = p3 - (p2 + 1);
+                    
+                    // Prevent buffer overflow by clamping length
+                    if (type_len >= sizeof(type)) {
+                        type_len = sizeof(type) - 1;
+                    }
+                    
+                    strncpy(type, p2 + 1, type_len);
+                    type[type_len] = '\0';
                     int val = atoi(p3 + 1);
 
                     ESP_LOGI(TAG, "[BLE] Control %s: %d", type, val);
@@ -256,12 +258,8 @@ static int gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
     case BLE_GATT_ACCESS_OP_READ_CHR:
         ESP_LOGI(TAG, "Characteristic read; conn_handle=%d, attr_handle=%d",
                  conn_handle, attr_handle);
-        // Here you would typically fetch the current value of the characteristic
-        // and append it to ctxt->om. For now, this is a placeholder.
-        // For example, for the version characteristic:
-        // if (ble_uuid_cmp(&ctxt->chr->uuid, &gatt_version_uuid.u) == 0) {
-        //     os_mbuf_append(ctxt->om, "1.0.0", strlen("1.0.0"));
-        // }
+        // Note: Implement os_mbuf_append logic here if you want BLE clients 
+        // to receive data when they manually read a characteristic.
         return 0;
     case BLE_GATT_ACCESS_OP_WRITE_CHR:
         ESP_LOGI(TAG, "Characteristic write; conn_handle=%d, attr_handle=%d",
@@ -276,10 +274,7 @@ static int gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
 }
 
 /*
- *  Handle GATT attribute register events
- *      - Service register event
- *      - Characteristic register event
- *      - Descriptor register event
+ * Handle GATT attribute register events
  */
 void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg) {
     /* Local variables */
@@ -319,10 +314,8 @@ void gatt_svr_register_cb(struct ble_gatt_register_ctxt *ctxt, void *arg) {
 }
 
 /*
- *  GATT server subscribe event callback
- *      1. Update heart rate subscription status
+ * GATT server subscribe event callback
  */
-
 void gatt_svr_subscribe_cb(struct ble_gap_event *event)
 {
     ESP_LOGI(TAG, "subscribe event; conn_handle=%d attr_handle=%d "
@@ -334,10 +327,7 @@ void gatt_svr_subscribe_cb(struct ble_gap_event *event)
 }
 
 /*
- *  GATT server initialization
- *      1. Initialize GATT service
- *      2. Update NimBLE host GATT services counter
- *      3. Add GATT services to server
+ * GATT server initialization
  */
 int gatt_svc_init(void) {
     /* Local variables */
@@ -359,4 +349,69 @@ int gatt_svc_init(void) {
     }
 
     return 0;
+}
+
+/*handlers getter functions*/
+uint16_t* get_bat_val_handle(void) {
+    return &bat_val_handle;
+}
+uint16_t* get_lux_val_handle(void) {
+    return &lux_val_handle;
+}
+uint16_t* get_pir_val_handle(void) {
+    return &pir_val_handle;
+}
+uint16_t* get_mmwave_val_handle(void) {
+    return &mmwave_val_handle;
+}
+uint16_t* get_amb_int_val_handle(void) {
+    return &amb_int_val_handle;
+}
+uint16_t* get_rgb_val_handle(void) {
+    return &rgb_val_handle;
+}
+uint16_t* get_ir_val_handle(void) {
+    return &ir_val_handle;
+}
+char* get_ssid(void) {
+    return ssid;
+}
+char* get_password(void) {
+    return password;
+}
+char* get_ver(void) {
+    return ver;
+}
+char* get_server_ip(void) {
+    return server_ip;
+}
+char* get_sessionFolder(void) {
+    return sessionFolder;
+}
+bool get_deviceStatus(void) {
+    return deviceStatus;
+}
+bool get_otaUpdateAvailable(void) {
+    return otaUpdateAvailable;
+}
+bool get_deviceConnected(void) {
+    return deviceConnected;
+}
+bool get_sendRgbFlag(void) {
+    return sendRgbFlag;
+}
+bool get_sendIrFlag(void) {
+    return sendIrFlag;
+}
+bool* get_stream_wifi(void) {
+    return &stream_wifi;
+}
+bool* get_wifi_connect(void) {
+    return &wifi_connect;
+}
+bool get_sessionInitialized(void) {
+    return sessionInitialized;
+}
+uint32_t* get_packetsLogged(void) {
+    return &packetsLogged;
 }

@@ -19,5 +19,6 @@
 /* Public function declarations */
 void adv_init(void);
 int gap_init(void);
+uint16_t* get_connection_handle(void);
 
 #endif // GAP_SVC_H

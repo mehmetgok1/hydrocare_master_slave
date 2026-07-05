@@ -10,13 +10,12 @@
 #include "common.h"
 #include "gap.h"
 #include "gatt_svc.h"
+#include "timer.h"
 
 // --- Function Declarations ---
 void init_ble();
-//void notifyAll();
-//void processBLETasks();
-
-
-
+void notifyAll(uint8_t bat, uint16_t lux, uint8_t pir, uint8_t mmwave, uint16_t amb_int, 
+               uint16_t *rgb_frame, uint16_t rgb_len, 
+               uint16_t *ir_frame, uint16_t ir_len);
 
 #endif // BLE_H

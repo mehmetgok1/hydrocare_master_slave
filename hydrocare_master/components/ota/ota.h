@@ -17,11 +17,7 @@
 
 //void printFirmwareInfo();
 //void manualUpdate();
-void printUpdateError();
-void performOTAUpdate();
-void checkForUpdate();
-void connectToWiFi();
-extern bool otaUpdateAvailable;
-
+void perform_ota_update(const char* version);
+void wifi_init_sta(char* ssid, char* password);
 
 #endif

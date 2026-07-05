@@ -8,6 +8,7 @@ idf_component_register(SRCS "${srcs}"
                         measurement
                         ui
                         ota
+                        timer
                         bt
                         nvs_flash                      
 )
