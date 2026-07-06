@@ -3,8 +3,9 @@
 
 
 static const char *TAG = "SDCARD";
+sdmmc_card_t *global_card_ptr = NULL; // ADD THIS GLOBAL POINTER
 
-esp_err_t write_file(const char *path, char *data)
+esp_err_t write_file(const char *path, const char *data)
 {
     ESP_LOGI(TAG, "Opening file %s", path);
     FILE *f = fopen(path, "w");
@@ -12,10 +13,12 @@ esp_err_t write_file(const char *path, char *data)
         ESP_LOGE(TAG, "Failed to open file for writing");
         return ESP_FAIL;
     }
-    fprintf(f, data);
+    
+    // Safer and faster for writing raw strings
+    fputs(data, f); 
     fclose(f);
+    
     ESP_LOGI(TAG, "File written");
-
     return ESP_OK;
 }
 
@@ -47,7 +50,6 @@ void init_sd(){
             .max_files = 5,
             .allocation_unit_size = 16 * 1024
         };
-        sdmmc_card_t *card;
         const char mount_point[] = MOUNT_POINT;
         ESP_LOGI(TAG, "Initializing SD card");
         ESP_LOGI(TAG, "Using SPI peripheral");
@@ -64,7 +66,7 @@ void init_sd(){
             .max_transfer_sz = 8192,
         };
 
-        esp_err_t ret = spi_bus_initialize(host.slot, &bus_cfg, SDSPI_DEFAULT_DMA);
+        esp_err_t ret = spi_bus_initialize(host.slot, &bus_cfg, SPI_DMA_CH_AUTO);
         if (ret != ESP_OK) {
             ESP_LOGE(TAG, "Failed to initialize bus.");
             return;
@@ -75,7 +77,7 @@ void init_sd(){
         slot_config.host_id = host.slot;
 
         ESP_LOGI(TAG, "Mounting filesystem");
-        ret = esp_vfs_fat_sdspi_mount(mount_point, &host, &slot_config, &mount_config, &card);
+        ret = esp_vfs_fat_sdspi_mount(mount_point, &host, &slot_config, &mount_config, &global_card_ptr);
 
         if (ret != ESP_OK) {
             if (ret == ESP_FAIL) {
@@ -88,8 +90,20 @@ void init_sd(){
             return;
         }
         ESP_LOGI(TAG, "Filesystem mounted");
-        sdmmc_card_print_info(stdout, card);
+        sdmmc_card_print_info(stdout, global_card_ptr);
 
+}
+// ADD THIS NEW FUNCTION
+void deinit_sd() {
+    if (global_card_ptr != NULL) {
+        esp_err_t err = esp_vfs_fat_sdcard_unmount(MOUNT_POINT, global_card_ptr);
+        if (err == ESP_OK) {
+            ESP_LOGI(TAG, "Card successfully unmounted. SPI bus released.");
+            global_card_ptr = NULL;
+        } else {
+            ESP_LOGE(TAG, "Failed to unmount card (%s)", esp_err_to_name(err));
+        }
+    }
 }
 //uint8_t eepromRead(uint8_t address)
 //{

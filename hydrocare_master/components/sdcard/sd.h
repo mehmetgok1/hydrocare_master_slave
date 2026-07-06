@@ -12,9 +12,9 @@
 
 //function declarations
 void init_sd();
-esp_err_t write_file(const char *path, char *data);
+esp_err_t write_file(const char *path, const char *data);
 esp_err_t read_file(const char *path);
-
+void deinit_sd(); // Add this line
 
 //definitionss
 #define MOUNT_POINT "/hydrocare_sd"
