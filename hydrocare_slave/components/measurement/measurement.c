@@ -8,26 +8,35 @@ static const char *TAG = "MEASUREMENT";
 
 bool measureAmbLight(uint16_t* ambLight)
 {
-  int raw = 0;
-  int voltage_mv = 0;
-  SemaphoreHandle_t adcMutex = get_adc_mutex();
-  if (!adcMutex || xSemaphoreTake(adcMutex, portMAX_DELAY) != pdTRUE) {
-    ESP_LOGE("MEASUREMENT", "ADC mutex unavailable for ambient light read!");
-    return false;
-  }
-    // 1. Read the raw 12-bit value once
-    esp_err_t err = adc_oneshot_read(get_adc1_handle(), ADC_CHANNEL_0, &raw);
-  xSemaphoreGive(adcMutex);
+    static uint8_t result[256];
+    uint32_t out_len;
+    adc_continuous_handle_t handle = get_adc_cont_handle();
+
+    // Read the latest chunk of data from the DMA buffer.
+    esp_err_t err = adc_continuous_read(handle, result, sizeof(result), &out_len, 0);
+    if (err == ESP_ERR_TIMEOUT) {
+        return false; // No new data, can be retried.
+    }
     if (err != ESP_OK) {
-        ESP_LOGE("MEASUREMENT", "Failed to read raw ADC1 Channel 0 value!");
-        return false; // Return false on failure instead of breaking
+        ESP_LOGE(TAG, "Continuous ADC Read failed for ambient light: %s", esp_err_to_name(err));
+        return false;
     }
 
-    // 2. Convert raw bits into calibrated Millivolts using the configuration getter
+    // Find the last sample for ADC_CHANNEL_0 in the buffer
+    int raw = -1;
+    for (int i = 0; i < out_len; i += sizeof(adc_digi_output_data_t)) {
+        adc_digi_output_data_t *p = (void*)&result[i];
+        if (p->type2.channel == ADC_CHANNEL_0) {
+            raw = p->type2.data;
+        }
+    }
+
+    if (raw == -1) return false; // Channel 0 data not found in this chunk
+
+    int voltage_mv = 0;
     if (is_adc_cali_enabled_chan0()) { 
         adc_cali_raw_to_voltage(get_adc1_cali_handle_chan0(), raw, &voltage_mv);
     } else {
-        // Fallback scaling calculation
         voltage_mv = (int)((raw / 4095.0f) * VREF * 1000.0f);
     }
     *ambLight = (uint16_t)((voltage_mv * 1000.0f) / R_LOAD);
@@ -55,7 +64,16 @@ bool measureMicrophone(uint16_t* mic_result)
     }
     // We only need the very last sample from the buffer.
     adc_digi_output_data_t *p = (void*)&result[out_len - sizeof(adc_digi_output_data_t)];
-    uint16_t raw = p->type2.data;
+    int raw = -1;
+    // Iterate backwards to find the last sample for our channel
+    for (int i = out_len - sizeof(adc_digi_output_data_t); i >= 0; i -= sizeof(adc_digi_output_data_t)) {
+        p = (void*)&result[i];
+        if (p->type2.channel == ADC_CHANNEL_1) {
+            raw = p->type2.data;
+            break;
+        }
+    }
+    if (raw == -1) return false; // Channel 1 data not found
     int voltage_mv = 0;
     if (is_adc_cali_enabled_chan1()) {
         adc_cali_raw_to_voltage(get_adc1_cali_handle_chan1(), raw, &voltage_mv);

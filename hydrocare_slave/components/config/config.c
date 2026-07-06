@@ -141,25 +141,25 @@ void init_adc_peripheral()
     };
     ESP_ERROR_CHECK(adc_continuous_new_handle(&adc_config, &adc_cont_handle));
 
-    // Configure Microphone channel (ADC1_CH1) for continuous mode
-    adc_digi_pattern_config_t adc_pattern_config = {
-        .atten = ADC_ATTEN_DB_12,
-        .channel = ADC_CHANNEL_1,
-        .unit = ADC_UNIT_1,
-        .bit_width = ADC_BITWIDTH_12,
+    // Configure Microphone (ADC1_CH1) and Ambient Light (ADC1_CH0) for continuous mode
+    adc_digi_pattern_config_t adc_pattern_config[2] = {
+        {
+            .atten = ADC_ATTEN_DB_12, .channel = ADC_CHANNEL_0, .unit = ADC_UNIT_1, .bit_width = ADC_BITWIDTH_12, // Ambient Light
+        },
+        {
+            .atten = ADC_ATTEN_DB_12, .channel = ADC_CHANNEL_1, .unit = ADC_UNIT_1, .bit_width = ADC_BITWIDTH_12, // Microphone
+        }
     };
     adc_continuous_config_t dig_cfg = {
         .sample_freq_hz = 20 * 1000, // Sample faster than we need
         .conv_mode = ADC_CONV_SINGLE_UNIT_1,
         .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,
-        .pattern_num = 1,
-        .adc_pattern = &adc_pattern_config,
+        .pattern_num = 2,
+        .adc_pattern = adc_pattern_config,
     };
     ESP_ERROR_CHECK(adc_continuous_config(adc_cont_handle, &dig_cfg));
 
     // ===== Initialize ADC Calibration =====
-    // Note: Continuous ADC (DMA) does not support the calibration driver directly.
-    // We initialize it here to get the characteristics, and then apply the calibration manually.
     adc_cali_enabled_chan0 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_0, ADC_ATTEN_DB_12, &adc1_cali_handle_chan0);
     adc_cali_enabled_chan1 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_1, ADC_ATTEN_DB_12, &adc1_cali_handle_chan1);
 
