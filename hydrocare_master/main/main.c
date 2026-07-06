@@ -47,10 +47,14 @@ uint16_t detectionDist;
 
 
 void app_main(void) {
+  // Suppress informational logs from the NimBLE stack to clean up the console
+  esp_log_level_set("NimBLE", ESP_LOG_WARN);
+
   initPeripherals();
   init_sd();
   init_ble();
   initTimer(&timerStream);  // Pass the address of timerStream to the timer
+  setTimer();               // Start the timer to activate data acquisition
   //disableTimer();
   initSPIComm();
   vTaskDelay(pdMS_TO_TICKS(50));  // Allow tasks to initialize
@@ -276,12 +280,8 @@ void loop() {
     stream_folder_to_tcp(get_sessionFolder(),get_server_ip());
     *get_stream_wifi() = false;
   }
-  if(timerStream){
-    ESP_LOGI(TAG2, "[MAIN] Streaming timer active.");
-  }
   if (get_deviceConnected() && timerStream == 1 && get_deviceStatus() == 1 && get_sessionInitialized()) {
     uint32_t loopStart = esp_timer_get_time();
-    ESP_LOGI(TAG2, "[MAIN] Loop iteration started");
     // ==================== DYNAMICALLY ALLOCATE BUFFERS ====================
     for(int i=0; i<NUM_BUFFERS; i++) {
       if(packetBuffers[i] == NULL) {

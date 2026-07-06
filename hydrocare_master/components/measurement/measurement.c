@@ -18,8 +18,8 @@ void parseAndPrintFrame(const uint8_t* frame, uint16_t len,uint16_t* movingDist,
     *staticEnergy  = frame[14];
     *detectionDist = frame[15] | (frame[16] << 8);
 
-    ESP_LOGI(TAG, "%d,%d,%d,%d,%d", 
-             *movingDist, *movingEnergy, *staticDist, *staticEnergy, *detectionDist);
+    //ESP_LOGI(TAG, "%d,%d,%d,%d,%d", 
+    //         *movingDist, *movingEnergy, *staticDist, *staticEnergy, *detectionDist);
 }
 /*// Shared output variables
 uint16_t movingDist = 0, staticDist = 0, detectionDist = 0;

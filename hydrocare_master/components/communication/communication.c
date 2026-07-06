@@ -46,16 +46,14 @@ void allocateSPIBuffer(void) {
     if (spiRxBuffer == NULL) {
         spiRxBuffer = (uint8_t*) heap_caps_calloc(1, SPI_BUFFER_SIZE + 2, MALLOC_CAP_DMA);
         if (!spiRxBuffer) ESP_LOGE(TAG, "RX DMA allocation failed!");
+        ESP_LOGI(TAG, "RX DMA buffer allocated");
     }
     
     // Allocate a persistent TX buffer full of zeroes
     if (spiTxBuffer == NULL) {
         spiTxBuffer = (uint8_t*) heap_caps_calloc(1, SPI_BUFFER_SIZE + 2, MALLOC_CAP_DMA);
         if (!spiTxBuffer) ESP_LOGE(TAG, "TX DMA allocation failed!");
-    }
-    
-    if (spiRxBuffer && spiTxBuffer) {
-        ESP_LOGI(TAG, "SPI DMA buffers allocated (51.2 KB total)");
+        ESP_LOGI(TAG, "TX DMA buffer allocated");
     }
 }
 
