@@ -164,6 +164,15 @@ static void handle_action_write(struct os_mbuf *om) {
         localtime_r(&now, &timeinfo);
         strftime(sessionFolder, sizeof(sessionFolder), "%y%m", &timeinfo);
         packetsLogged = 0;
+
+        // Create the session directory on the SD card. This is the logical place for this action.
+        char session_dir_path[128];
+        snprintf(session_dir_path, sizeof(session_dir_path), "/hydrocare_sd/%s", sessionFolder);
+        struct stat st = {0};
+        if (stat(session_dir_path, &st) == -1) {
+            mkdir(session_dir_path, 0755); // 0755 gives r/w/x for owner, r/x for others
+        }
+
         sessionInitialized = true;
         ESP_LOGI(TAG, "[BLE] Session files ready for logging");
     } else if (strncmp(command, "Com;Stop", 8) == 0) {
@@ -353,6 +362,12 @@ int gatt_svc_init(void) {
     password = malloc(64);
     ver = malloc(32);
     server_ip = malloc(16);
+
+    // Initialize them to empty strings to prevent using uninitialized memory
+    if (ssid) *ssid = '\0';
+    if (password) *password = '\0';
+    if (ver) *ver = '\0';
+    if (server_ip) *server_ip = '\0';
 
     return 0;
 }

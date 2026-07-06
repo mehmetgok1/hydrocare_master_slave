@@ -10,9 +10,23 @@ static const char *DEVICE_ID = "ESP32S3_UNIT_01";
 void stream_folder_to_tcp(const char* folder_name,char* server_ip) {
     int64_t task_start = esp_timer_get_time();
     char server_url[256];
+
+    // Add a guard to prevent running with an unconfigured server IP
+    if (server_ip == NULL || strlen(server_ip) == 0) {
+        ESP_LOGE(TAG, "Cannot start stream: Server IP is not configured.");
+        return;
+    }
     
     // Construct the backend URL
     snprintf(server_url, sizeof(server_url), "http://%s:8000/upload", server_ip);
+
+    // Allocate the buffer on the heap to avoid stack overflow
+    char *buffer = malloc(2048);
+    if (buffer == NULL) {
+        ESP_LOGE(TAG, "Failed to allocate memory for HTTP stream buffer");
+        return;
+    }
+
 
     for (int i = 0; i < 10000; i += 50) {
         char file_path[256];
@@ -54,7 +68,6 @@ void stream_folder_to_tcp(const char* folder_name,char* server_ip) {
         esp_err_t err = esp_http_client_open(client, file_size);
         if (err == ESP_OK) {
             // Buffer to stream data from SD to Network
-            char buffer[2048]; 
             size_t read_bytes;
             
             // Read from SD and write to HTTP iteratively (prevents memory exhaustion)
@@ -86,6 +99,8 @@ void stream_folder_to_tcp(const char* folder_name,char* server_ip) {
         // Yield to allow watchdog and other tasks to run
         vTaskDelay(pdMS_TO_TICKS(10)); 
     }
+
+    free(buffer); // Free the heap-allocated buffer
 
     int64_t task_duration_ms = (esp_timer_get_time() - task_start) / 1000;
     ESP_LOGI(TAG, "Total upload routine finished in: %lld ms", task_duration_ms);
