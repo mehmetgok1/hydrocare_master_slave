@@ -10,6 +10,7 @@
 
 /* Private function declarations */
 uint16_t global_conn_handle = BLE_HS_CONN_HANDLE_NONE;
+bool deviceConnected = false;
 
 inline static void format_addr(char *addr_str, uint8_t addr[]);
 static void print_conn_desc(struct ble_gap_conn_desc *desc);
@@ -19,7 +20,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg);
 /* Private variables */
 static uint8_t own_addr_type;
 static uint8_t addr_val[6] = {0};
-static uint8_t esp_uri[] = {BLE_GAP_URI_PREFIX_HTTPS, '/', '/', 'e', 's', 'p', 'r', 'e', 's', 's', 'i', 'f', '.', 'c', 'o', 'm'};
+//static uint8_t esp_uri[] = {BLE_GAP_URI_PREFIX_HTTPS, '/', '/', 'e', 's', 'p', 'r', 'e', 's', 's', 'i', 'f', '.', 'c', 'o', 'm'};
 
 /* Private functions */
 inline static void format_addr(char *addr_str, uint8_t addr[]) {
@@ -64,24 +65,6 @@ static void start_advertising(void) {
     /* Set advertising flags */
     adv_fields.flags = BLE_HS_ADV_F_DISC_GEN | BLE_HS_ADV_F_BREDR_UNSUP;
 
-    /* Set device name */
-    name = ble_svc_gap_device_name();
-    adv_fields.name = (uint8_t *)name;
-    adv_fields.name_len = strlen(name);
-    adv_fields.name_is_complete = 1;
-
-    /* Set device tx power */
-    adv_fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
-    adv_fields.tx_pwr_lvl_is_present = 1;
-
-    /* Set device appearance */
-    adv_fields.appearance = BLE_GAP_APPEARANCE_GENERIC_TAG;
-    adv_fields.appearance_is_present = 1;
-
-    /* Set device LE role */
-    adv_fields.le_role = BLE_GAP_LE_ROLE_PERIPHERAL;
-    adv_fields.le_role_is_present = 1;
-
     /* Set advertisement fields */
     rc = ble_gap_adv_set_fields(&adv_fields);
     if (rc != 0) {
@@ -89,9 +72,19 @@ static void start_advertising(void) {
         return;
     }
 
-    /* Set URI */
-    rsp_fields.uri = esp_uri;
-    rsp_fields.uri_len = sizeof(esp_uri);
+    /* Set device name in scan response */
+    name = ble_svc_gap_device_name();
+    rsp_fields.name = (uint8_t *)name;
+    rsp_fields.name_len = strlen(name);
+    rsp_fields.name_is_complete = 1;
+
+    /* Set device appearance in scan response */
+    rsp_fields.appearance = BLE_GAP_APPEARANCE_GENERIC_TAG;
+    rsp_fields.appearance_is_present = 1;
+
+    /* Set device tx power in scan response */
+    rsp_fields.tx_pwr_lvl = BLE_HS_ADV_TX_PWR_LVL_AUTO;
+    rsp_fields.tx_pwr_lvl_is_present = 1;
 
     /* Set scan response fields */
     rc = ble_gap_adv_rsp_set_fields(&rsp_fields);
@@ -137,7 +130,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
         ESP_LOGI(TAG, "connection %s; status=%d",
                  event->connect.status == 0 ? "established" : "failed",
                  event->connect.status);
-
+        deviceConnected = true;
         /* Connection succeeded */
         if (event->connect.status == 0) {
             /* Check connection handle */
@@ -179,7 +172,7 @@ static int gap_event_handler(struct ble_gap_event *event, void *arg) {
         /* A connection was terminated, print connection descriptor */
         ESP_LOGI(TAG, "disconnected from peer; reason=%d",
                  event->disconnect.reason);
-
+        deviceConnected = false;
         /* Restart advertising */
         start_advertising();
         return rc;
@@ -311,4 +304,8 @@ int gap_init(void) {
 
 uint16_t* get_connection_handle(void) {
     return &global_conn_handle;
+}
+
+bool* get_deviceConnected(void) {
+    return &deviceConnected;
 }

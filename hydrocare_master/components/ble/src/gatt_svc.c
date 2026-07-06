@@ -25,7 +25,6 @@ char sessionFolder[64] = "session_default";
 // --- Globals ---
 bool deviceStatus = false; // false = stopped, true = logging
 bool otaUpdateAvailable = false;
-bool deviceConnected = false;
 bool sendRgbFlag = false;
 bool sendIrFlag = false;
 bool stream_wifi =false ; 
@@ -155,7 +154,7 @@ static void handle_action_write(struct os_mbuf *om) {
             }
         }
     } else if (strncmp(command, "Com;Start", 9) == 0) {
-        deviceStatus = 1;
+        deviceStatus = true;
         ESP_LOGI(TAG, "\n[BLE] Logging started - Creating new session folder...");
         time_t now;
         struct tm timeinfo;
@@ -168,7 +167,7 @@ static void handle_action_write(struct os_mbuf *om) {
         sessionInitialized = true;
         ESP_LOGI(TAG, "[BLE] Session files ready for logging");
     } else if (strncmp(command, "Com;Stop", 8) == 0) {
-        deviceStatus = 0;
+        deviceStatus = false;
         sessionInitialized = false;
         ESP_LOGI(TAG, "[SD] Stop Logging. files will be transmitted over TCP socket.");
         stream_wifi = true;
@@ -400,9 +399,6 @@ bool get_deviceStatus(void) {
 }
 bool get_otaUpdateAvailable(void) {
     return otaUpdateAvailable;
-}
-bool get_deviceConnected(void) {
-    return deviceConnected;
 }
 bool get_sendRgbFlag(void) {
     return sendRgbFlag;

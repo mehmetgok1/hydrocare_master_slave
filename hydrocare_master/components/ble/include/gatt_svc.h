@@ -38,7 +38,6 @@ char* get_server_ip(void);
 char* get_sessionFolder(void);
 bool get_deviceStatus(void);
 bool get_otaUpdateAvailable(void);
-bool get_deviceConnected(void);
 bool get_sendRgbFlag(void);
 bool get_sendIrFlag(void);
 bool* get_stream_wifi(void);

@@ -51,7 +51,7 @@ void app_main(void) {
   init_sd();
   init_ble();
   initTimer(&timerStream);  // Pass the address of timerStream to the timer
-  disableTimer();
+  //disableTimer();
   initSPIComm();
   vTaskDelay(pdMS_TO_TICKS(50));  // Allow tasks to initialize
   dataQueue = xQueueCreate(NUM_BUFFERS, sizeof(CombinedDataPacket*));
@@ -231,6 +231,7 @@ void sdCardLoggingTask(void *parameter) {
 }
 
 void loop() {
+  
   //checkUSB();
   if (get_otaUpdateAvailable()) {
     uiOTAStarted(NULL,NULL,NULL);
@@ -275,9 +276,12 @@ void loop() {
     stream_folder_to_tcp(get_sessionFolder(),get_server_ip());
     *get_stream_wifi() = false;
   }
+  if(timerStream){
+    ESP_LOGI(TAG2, "[MAIN] Streaming timer active.");
+  }
   if (get_deviceConnected() && timerStream == 1 && get_deviceStatus() == 1 && get_sessionInitialized()) {
     uint32_t loopStart = esp_timer_get_time();
-    
+    ESP_LOGI(TAG2, "[MAIN] Loop iteration started");
     // ==================== DYNAMICALLY ALLOCATE BUFFERS ====================
     for(int i=0; i<NUM_BUFFERS; i++) {
       if(packetBuffers[i] == NULL) {
@@ -338,7 +342,6 @@ void loop() {
     if(debug_infos){
       ESP_LOGI(TAG2, "[LOOP] Cycle: %u ms (< 1000 ms timer)", esp_timer_get_time() - loopStart);
     }
-    
     timerStream = 0;
   }
 }
