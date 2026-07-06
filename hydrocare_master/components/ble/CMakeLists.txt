@@ -1,5 +1,5 @@
 file(GLOB_RECURSE srcs "*.c" "src/*.c")
-idf_component_register(SRCS "${srcs}"
+idf_component_register(SRCS "ble.c" "${srcs}"
                     INCLUDE_DIRS "." "./include"
                     REQUIRES
                         sdcard

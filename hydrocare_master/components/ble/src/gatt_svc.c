@@ -17,10 +17,10 @@ uint16_t rgb_val_handle;
 uint16_t ir_val_handle;
 
 /* credentials */
-char* ssid = NULL;
-char* password = NULL;
-char* ver = NULL;
-char* server_ip = NULL;
+char* ssid;
+char* password;
+char* ver;
+char* server_ip;
 char sessionFolder[64] = "session_default";
 // --- Globals ---
 bool deviceStatus = false; // false = stopped, true = logging
@@ -347,6 +347,12 @@ int gatt_svc_init(void) {
     if (rc != 0) {
         return rc;
     }
+
+    // Allocate memory for credentials
+    ssid = malloc(64);
+    password = malloc(64);
+    ver = malloc(32);
+    server_ip = malloc(16);
 
     return 0;
 }

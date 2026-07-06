@@ -96,8 +96,7 @@ void init_led_strip(void)
         }
     };
     // LED Strip object handle
-    led_strip_handle_t led_strip;
-    ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &led_strip));
+    ESP_ERROR_CHECK(led_strip_new_rmt_device(&strip_config, &rmt_config, &main_led_strip));
     led_strip_clear(main_led_strip);
     // Set the first pixel to a dim green to indicate successful initialization
     led_strip_set_pixel(main_led_strip, 0, 0, 5, 0);

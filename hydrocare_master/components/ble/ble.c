@@ -79,7 +79,7 @@ void init_ble() {
     rc = gatt_svc_init();
     if (rc != 0) {
         ESP_LOGE(TAG, "failed to initialize GATT server, error code: %d", rc);
-        nimble_port_deinit(); // Add cleanup
+        nimble_port_deinit();
         return;
     }
     /* NimBLE host configuration initialization */
