@@ -4,11 +4,11 @@
 #include "gatt_svc.h"
 
 const char *TAG2 = "MAIN";
+bool debug_infos = true; // Set to true to enable detailed debug prints*/
 
 volatile bool timerStream = false;
 uint16_t downsampled16x16[256];  // Shared with BLE for transmission
 uint16_t irFrame16x12[192];      // Shared with BLE for transmission
-bool debug_infos = false; // Set to true to enable detailed debug prints*/
 #pragma pack(1)
 typedef struct {
   float batteryLevel;             
@@ -281,7 +281,7 @@ void loop() {
     *get_stream_wifi() = false;
   }
   if (get_deviceConnected() && timerStream == 1 && get_deviceStatus() == 1 && get_sessionInitialized()) {
-    uint32_t loopStart = esp_timer_get_time();
+    int64_t loopStart = esp_timer_get_time();
     // ==================== DYNAMICALLY ALLOCATE BUFFERS ====================
     for(int i=0; i<NUM_BUFFERS; i++) {
       if(packetBuffers[i] == NULL) {
@@ -340,7 +340,9 @@ void loop() {
     
     // Total loop execution time
     if(debug_infos){
-      ESP_LOGI(TAG2, "[LOOP] Cycle: %u ms (< 1000 ms timer)", esp_timer_get_time() - loopStart);
+      ESP_LOGI(TAG2, "[LOOP] Cycle: %llu ms (< 1000 ms timer)", (esp_timer_get_time() - loopStart) / 1000);
+      ESP_LOGI(TAG2, "[slaveData] accelX: %u | accelY: %u | accelZ: %u | temperature: %.1f | humdity: %.1f | ambienlight: %u | sequence: %u", 
+               slaveData->accelX, slaveData->accelY, slaveData->accelZ, slaveData->temperature, slaveData->humidity, slaveData->ambientLight, slaveData->sequence);
     }
     timerStream = 0;
   }
