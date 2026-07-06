@@ -41,12 +41,12 @@ void initPeripherals()
 {
     initPins();
     init_adc_peripheral();
+    initI2CBus(); // Initialize I2C bus before peripherals that use it
     init_spi_peripheral(); 
     initBME680();
     initCamera();
     powerLEDInit();
     initLIS3DH();
-    initI2CBus();
     initIRTemp();
     // Get available PSRAM size
     size_t available_PSRAM_size = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);

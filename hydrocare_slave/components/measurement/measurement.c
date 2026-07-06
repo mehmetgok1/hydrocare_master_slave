@@ -93,9 +93,17 @@ void set_led_brightness(uint8_t brightness_pct) {
   if (brightness_pct > 100) {
     ESP_LOGW(TAG, "Brightness percentage %d exceeds 100%%. Clamping.", brightness_pct);
     brightness_pct = 100;
-  }                                 
+  }                      
+  uint32_t inverted_pct = 100 - brightness_pct;  
+  uint32_t duty_val;         
   // 2. Map 0-100 to 0-1023 (10-bit duty)
-  uint32_t duty_val = (brightness_pct * 1023) / 100;
+  if(inverted_pct == 100) {
+    duty_val = 1024; // Fully off
+  } else if (inverted_pct == 0) {
+    duty_val = 0;    // Fully on  
+  }else {
+    duty_val = (inverted_pct * 1024) / 100;
+  }
   ESP_ERROR_CHECK(ledc_set_duty(LEDC_MODE, LEDC_CHANNEL, duty_val));
   ESP_ERROR_CHECK(ledc_update_duty(LEDC_MODE, LEDC_CHANNEL));
 }
