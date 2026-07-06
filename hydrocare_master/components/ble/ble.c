@@ -1,4 +1,5 @@
 #include "ble.h"
+#include <stdint.h>
 
 // --- Globals ---
 //bool deviceConnected = false;
@@ -136,17 +137,34 @@ static void send_chunked_notification(uint16_t char_val_handle, const void *data
     }
 }
 // --- The Main notifyAll Function ---
-void notifyAll(uint8_t bat, uint16_t lux, uint8_t pir, uint8_t mmwave, uint16_t amb_int, 
+void notifyAll(float bat, uint16_t lux, uint8_t pir, uint8_t mmwave, uint16_t amb_int,
+               uint16_t movingDist,uint16_t movingEnergy, uint16_t staticDist,uint16_t staticEnergy,uint16_t detectionDist,  
                uint16_t *rgb_frame, uint16_t rgb_len, 
                uint16_t *ir_frame, uint16_t ir_len) 
 {
-    // 1. Notify simple sensors (sent entirely in one packet)
-    send_single_notification(*get_bat_val_handle(), &bat, sizeof(bat));
-    send_single_notification(*get_lux_val_handle(), &lux, sizeof(lux));
-    send_single_notification(*get_pir_val_handle(), &pir, sizeof(pir));
-    send_single_notification(*get_mmwave_val_handle(), &mmwave, sizeof(mmwave));
-    send_single_notification(*get_amb_int_val_handle(), &amb_int, sizeof(amb_int));
+    char str_buf[64]; // Temporary buffer to hold the strings
 
+    // 1. Battery (Float to String, 1 decimal place)
+    snprintf(str_buf, sizeof(str_buf), "%.1f", bat);
+    send_single_notification(*get_bat_val_handle(), str_buf, strlen(str_buf));
+
+    // 2. Lux (Integer to String)
+    snprintf(str_buf, sizeof(str_buf), "%u", lux);
+    send_single_notification(*get_lux_val_handle(), str_buf, strlen(str_buf));
+
+    // 3. PIR (Integer to String)
+    snprintf(str_buf, sizeof(str_buf), "%u", pir);
+    send_single_notification(*get_pir_val_handle(), str_buf, strlen(str_buf));
+
+    // 4. Ambient Internal (Integer to String)
+    snprintf(str_buf, sizeof(str_buf), "%u", amb_int);
+    send_single_notification(*get_amb_int_val_handle(), str_buf, strlen(str_buf));
+
+    // 5. mmWave (Complex comma-separated string)
+    // Replicating: String((int)movingDist) + "," + String((int)movingEnergy) + ...
+    snprintf(str_buf, sizeof(str_buf), "%u,%u,%u,%u,%u", 
+             movingDist, movingEnergy, staticDist, staticEnergy, detectionDist);
+    send_single_notification(*get_mmwave_val_handle(), str_buf, strlen(str_buf));
     // 2. Notify large frames using the chunking logic!
     if (rgb_frame != NULL && rgb_len > 0) {
         send_chunked_notification(*get_rgb_val_handle(), rgb_frame, rgb_len);

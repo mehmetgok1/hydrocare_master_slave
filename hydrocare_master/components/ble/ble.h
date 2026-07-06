@@ -15,8 +15,9 @@
 
 // --- Function Declarations ---
 void init_ble();
-void notifyAll(uint8_t bat, uint16_t lux, uint8_t pir, uint8_t mmwave, uint16_t amb_int, 
-               uint16_t *rgb_frame, uint16_t rgb_len, 
-               uint16_t *ir_frame, uint16_t ir_len);
+void notifyAll(float bat, uint16_t lux, uint8_t pir, uint8_t mmwave, uint16_t amb_int, 
+            uint16_t movingDist,uint16_t movingEnergy, uint16_t staticDist,uint16_t staticEnergy,uint16_t detectionDist,   
+            uint16_t *rgb_frame, uint16_t rgb_len, 
+            uint16_t *ir_frame, uint16_t ir_len);
 
 #endif // BLE_H
