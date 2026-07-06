@@ -89,18 +89,9 @@ static void start_advertising(void) {
         return;
     }
 
-    /* Set device address */
-    rsp_fields.device_addr = addr_val;
-    rsp_fields.device_addr_type = own_addr_type;
-    rsp_fields.device_addr_is_present = 1;
-
     /* Set URI */
     rsp_fields.uri = esp_uri;
     rsp_fields.uri_len = sizeof(esp_uri);
-
-    /* Set advertising interval */
-    rsp_fields.adv_itvl = BLE_GAP_ADV_ITVL_MS(500);
-    rsp_fields.adv_itvl_is_present = 1;
 
     /* Set scan response fields */
     rc = ble_gap_adv_rsp_set_fields(&rsp_fields);

@@ -76,8 +76,7 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
      .characteristics =
          (struct ble_gatt_chr_def[]){
              {.uuid = &gatt_version_uuid.u,
-              .access_cb = gatt_svr_chr_access,
-              .flags = BLE_GATT_CHR_F_READ},
+              .access_cb = gatt_svr_chr_access, .flags = BLE_GATT_CHR_F_READ},
              {.uuid = &gatt_bat_uuid.u,
               .access_cb = gatt_svr_chr_access,
               .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
@@ -110,7 +109,9 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
               .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
               .val_handle = &ir_val_handle},
              {0} /* No more characteristics in this service */
-         }}
+         }
+    },
+    {0} /* No more services in this table */
 };
 
 /* Command handler for writes to the action characteristic */

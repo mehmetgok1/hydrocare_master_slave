@@ -298,7 +298,7 @@ void loop() {
     measuremmWave(&movingDist, &movingEnergy, &staticDist, &staticEnergy, &detectionDist);
     
     // ==================== COMBINE AND PUSH TO QUEUE ====================
-    if (slaveData != nullptr) {
+    if (slaveData != NULL) {
       
       CombinedDataPacket* currentPacket = NULL;
       
@@ -326,7 +326,7 @@ void loop() {
     }
     
     // ==================== BLE NOTIFICATION PHASE ====================
-    if (slaveData != nullptr) {
+    if (slaveData != NULL) {
       downsampleRGBFrame(slaveData->rgbFrame, downsampled16x16);
       memcpy(irFrame16x12, slaveData->irFrame, sizeof(irFrame16x12));
     }
