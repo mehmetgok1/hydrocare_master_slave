@@ -104,24 +104,55 @@ static void send_single_notification(uint16_t char_val_handle, const void *data,
         ESP_LOGE("BLE", "Error sending notification: %d", rc);
     }
 }
+static void send_chunked_notification(uint16_t char_val_handle, const void *data, uint16_t total_len) {
+    if (total_len == 0 || data == NULL) return;
+
+    const uint8_t *ptr = (const uint8_t *)data;
+    uint16_t remaining = total_len;
+    uint16_t offset = 0;
+
+    while (remaining > 0) {
+        // Max payload size is usually MTU - 3. We use 200 for safety.
+        uint16_t chunk_size = remaining > 200 ? 200 : remaining;
+        
+        // Payload buffer: 2 bytes for offset + chunk data
+        uint8_t payload[202]; 
+        
+        payload[0] = offset & 0xFF;         // Low byte of offset
+        payload[1] = (offset >> 8) & 0xFF;  // High byte of offset
+        memcpy(&payload[2], ptr + offset, chunk_size);
+
+        // Allocate mbuf and send the chunk
+        struct os_mbuf *om = ble_hs_mbuf_from_flat(payload, chunk_size + 2);
+        if (om) {
+            ble_gatts_notify_custom(*get_connection_handle(), char_val_handle, om);
+        }
+
+        offset += chunk_size;
+        remaining -= chunk_size;
+        
+        // Small delay to prevent flooding the BLE stack and causing disconnects
+        vTaskDelay(pdMS_TO_TICKS(5)); 
+    }
+}
 // --- The Main notifyAll Function ---
 void notifyAll(uint8_t bat, uint16_t lux, uint8_t pir, uint8_t mmwave, uint16_t amb_int, 
                uint16_t *rgb_frame, uint16_t rgb_len, 
                uint16_t *ir_frame, uint16_t ir_len) 
 {
-    // 1. Notify simple sensors
+    // 1. Notify simple sensors (sent entirely in one packet)
     send_single_notification(*get_bat_val_handle(), &bat, sizeof(bat));
     send_single_notification(*get_lux_val_handle(), &lux, sizeof(lux));
     send_single_notification(*get_pir_val_handle(), &pir, sizeof(pir));
     send_single_notification(*get_mmwave_val_handle(), &mmwave, sizeof(mmwave));
     send_single_notification(*get_amb_int_val_handle(), &amb_int, sizeof(amb_int));
 
-    // 2. Notify large frames (only if pointers are valid)
+    // 2. Notify large frames using the chunking logic!
     if (rgb_frame != NULL && rgb_len > 0) {
-        send_single_notification(*get_rgb_val_handle(), rgb_frame, rgb_len);
+        send_chunked_notification(*get_rgb_val_handle(), rgb_frame, rgb_len);
     }
     
     if (ir_frame != NULL && ir_len > 0) {
-        send_single_notification(*get_ir_val_handle(), ir_frame, ir_len);
+        send_chunked_notification(*get_ir_val_handle(), ir_frame, ir_len);
     }
 }

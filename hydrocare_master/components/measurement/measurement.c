@@ -1,4 +1,5 @@
 #include "measurement.h"
+#include "esp_log.h"
 
 static const char *TAG = "measurement";
 
@@ -66,6 +67,7 @@ void measuremmWave(uint16_t* movingDist, uint8_t* movingEnergy, uint16_t* static
 
 bool measurePIR(uint16_t* PIRValue){
   int raw = 0;
+  int voltage_mv = 0;
   SemaphoreHandle_t adcMutex = get_adc_mutex();
   if (!adcMutex || xSemaphoreTake(adcMutex, portMAX_DELAY) != pdTRUE) {
     ESP_LOGE("MEASUREMENT", "ADC mutex unavailable for ambient light read!");
@@ -78,11 +80,12 @@ bool measurePIR(uint16_t* PIRValue){
       ESP_LOGE("MEASUREMENT", "Failed to read raw ADC1 Channel 2 value!");
       return false; // Return false on failure instead of breaking
   }
-  // 2. Convert raw bits into calibrated Millivolts using the configuration getter
-  //if (is_adc_cali_enabled_chan2()) { 
-  //    adc_cali_raw_to_voltage(get_adc1_cali_handle_chan2(), raw, &voltage_mv);
-  //}  
-  *PIRValue = (uint16_t)raw;
+  //2. Convert raw bits into calibrated Millivolts using the configuration getter
+  if (is_adc_cali_enabled_chan2()) { 
+      adc_cali_raw_to_voltage(get_adc1_cali_handle_chan2(), raw, &voltage_mv);
+  }  
+  //ESP_LOGI(TAG, "PIR Value: %d mV", voltage_mv);
+  *PIRValue = (uint16_t)voltage_mv;
   return true;
 }
 
@@ -113,10 +116,11 @@ bool measureBatteryLevel(uint16_t* batteryLevelOut, float* batteryPercentageOut)
   }
   gpio_set_level((gpio_num_t)Batt_EN, 1);
   gpio_set_level((gpio_num_t)CE_En, 0);
-
   *batteryLevelOut = *batteryLevelOut / Batt_Meas_Count;
   *batteryLevelOut = (*batteryLevelOut * Batt_VoltDiv_Mult*DigitalSupply) / 4095;
   *batteryLevelOut = *batteryLevelOut * Batt_Const_X - Batt_Const_Y;
+  //ESP_LOGI(TAG, "Battery Level Value: %d raw", *batteryLevelOut);
+
   // High clamp
   if (*batteryLevelOut >= 4.20f)
       *batteryPercentageOut = 100.0f;
@@ -158,7 +162,7 @@ bool measureAmbLight(uint16_t* ambLight)
         return false; // Return false on failure instead of breaking
     }
 
-    // 2. Convert raw bits into calibrated Millivolts using the configuration getter
+    //2. Convert raw bits into calibrated Millivolts using the configuration getter
     if (is_adc_cali_enabled_chan0()) { 
         adc_cali_raw_to_voltage(get_adc1_cali_handle_chan0(), raw, &voltage_mv);
     } else {
@@ -166,6 +170,7 @@ bool measureAmbLight(uint16_t* ambLight)
         voltage_mv = (int)((raw / 4095.0f) * VREF * 1000.0f);
     }
     *ambLight = (uint16_t)((voltage_mv * 1000.0f) / R_LOAD);
+    //ESP_LOGI(TAG, "AmbLight Value: %d mV", voltage_mv);
     return true;
 }
 

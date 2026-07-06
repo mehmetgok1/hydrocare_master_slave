@@ -48,7 +48,7 @@ void initPins(){
 
   // ===== Configure Input Pins using ESP-IDF native API =====
   gpio_config_t io_conf_input = {
-      .pin_bit_mask = (1ULL << PIR) | (1ULL << mmWave_Out) | (1ULL << USB_Voltage),
+      .pin_bit_mask = (1ULL << mmWave_Out) | (1ULL << USB_Voltage),
       .mode = GPIO_MODE_INPUT,
       .intr_type = GPIO_INTR_DISABLE,
       .pull_down_en = GPIO_PULLDOWN_DISABLE,
@@ -147,16 +147,20 @@ void init_adc_peripheral()
         .bitwidth = ADC_BITWIDTH_12,
         .atten = ADC_ATTEN_DB_12,
     };
+    adc_oneshot_chan_cfg_t config2 = {
+        .bitwidth = ADC_BITWIDTH_12,
+        .atten = ADC_ATTEN_DB_0,
+    };
     // AmbLight is on GPIO1 -> ADC1_CH0
     ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_0, &config)); // AmbLight on GPIO1
     // battlevel is on GPIO2 -> ADC1_CH1
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_1, &config));
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_1, &config2));
     // PIR  is on GPIO3 -> ADC1_CH2
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_2, &config));
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_2, &config2));
     // ===== Initialize ADC Calibration =====
     adc_cali_enabled_chan0 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_0, ADC_ATTEN_DB_12, &adc1_cali_handle_chan0);
-    adc_cali_enabled_chan1 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_1, ADC_ATTEN_DB_12, &adc1_cali_handle_chan1);
-    adc_cali_enabled_chan2 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_2, ADC_ATTEN_DB_12, &adc1_cali_handle_chan2);
+    adc_cali_enabled_chan1 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_1, ADC_ATTEN_DB_0, &adc1_cali_handle_chan1);
+    adc_cali_enabled_chan2 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_2, ADC_ATTEN_DB_0, &adc1_cali_handle_chan2);
 }
 
 void init_mmWave() {

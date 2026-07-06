@@ -5,7 +5,7 @@
 #include <inttypes.h> // Include for portable format specifiers like PRIu32
 
 const char *TAG2 = "MAIN";
-bool debug_infos = true; // Set to true to enable detailed debug prints*/
+bool debug_infos = false; // Set to true to enable detailed debug prints*/
 
 volatile bool timerStream = false;
 uint16_t downsampled16x16[256];  // Shared with BLE for transmission
@@ -36,15 +36,15 @@ void sdCardLoggingTask(void *parameter);
 void loop();
 
 //intermediate values
-uint16_t batteryLevel;
-float batteryPercentage;
-uint16_t ambLight;
-uint16_t PIRValue;
-uint16_t movingDist; 
-uint8_t movingEnergy; 
-uint16_t staticDist; 
-uint8_t staticEnergy; 
-uint16_t detectionDist;
+uint16_t master_batteryLevel;
+float    master_batteryPercentage;
+uint16_t master_ambLight;
+uint16_t master_PIRValue;
+uint16_t master_movingDist; 
+uint8_t  master_movingEnergy; 
+uint16_t master_staticDist; 
+uint8_t  master_staticEnergy; 
+uint16_t master_detectionDist;
 
 
 void app_main(void) {
@@ -272,10 +272,10 @@ void loop() {
     SensorDataPacket* slaveData = readSlaveData(); 
     
     // ==================== MEASURE MASTER SENSORS ====================
-    measureBatteryLevel(&batteryLevel, &batteryPercentage);
-    measureAmbLight(&ambLight);
-    measurePIR(&PIRValue);
-    measuremmWave(&movingDist, &movingEnergy, &staticDist, &staticEnergy, &detectionDist);
+    measureBatteryLevel(&master_batteryLevel, &master_batteryPercentage);
+    measureAmbLight(&master_ambLight);
+    measurePIR(&master_PIRValue);
+    measuremmWave(&master_movingDist, &master_movingEnergy, &master_staticDist, &master_staticEnergy, &master_detectionDist);
     
     // ==================== COMBINE AND PUSH TO QUEUE ====================
     if (slaveData != NULL) {
@@ -285,16 +285,16 @@ void loop() {
       // Try to get a free buffer from the queue (0 block time)
       if (xQueueReceive(emptyQueue, &currentPacket, 0) == pdTRUE) {
         
-        currentPacket->batteryLevel = batteryLevel;
-        currentPacket->batteryPercentage = batteryPercentage;
-        currentPacket->ambLight = ambLight;
-        currentPacket->ambLight_Int = ambLight;
-        currentPacket->PIRValue = PIRValue;
-        currentPacket->movingDist = movingDist;
-        currentPacket->movingEnergy = movingEnergy;
-        currentPacket->staticDist = staticDist;
-        currentPacket->staticEnergy = staticEnergy;
-        currentPacket->detectionDist = detectionDist;
+        currentPacket->batteryLevel = master_batteryLevel;
+        currentPacket->batteryPercentage = master_batteryPercentage;
+        currentPacket->ambLight = master_ambLight;
+        currentPacket->ambLight_Int = master_ambLight;
+        currentPacket->PIRValue = master_PIRValue;
+        currentPacket->movingDist = master_movingDist;
+        currentPacket->movingEnergy = master_movingEnergy;
+        currentPacket->staticDist = master_staticDist;
+        currentPacket->staticEnergy = master_staticEnergy;
+        currentPacket->detectionDist = master_detectionDist;
         
         memcpy(&currentPacket->slaveData, slaveData, sizeof(SensorDataPacket));
         
@@ -310,15 +310,20 @@ void loop() {
       downsampleRGBFrame(slaveData->rgbFrame, downsampled16x16);
       memcpy(irFrame16x12, slaveData->irFrame, sizeof(irFrame16x12));
     }
-    notifyAll(batteryLevel, ambLight, PIRValue, movingDist, ambLight, 
+    notifyAll(master_batteryLevel, master_ambLight, master_PIRValue, master_movingDist, master_ambLight, 
               downsampled16x16, sizeof(downsampled16x16), 
               irFrame16x12, sizeof(irFrame16x12));
     
     // Total loop execution time
     if(debug_infos){
-      ESP_LOGI(TAG2, "[LOOP] Cycle: %llu ms (< 1000 ms timer)", (esp_timer_get_time() - loopStart) / 1000);
-      ESP_LOGI(TAG2, "[slaveData] accelX: %u | accelY: %u | accelZ: %u | temperature: %.1f | humdity: %.1f | ambienlight: %u | sequence: %u", 
-               slaveData->accelX, slaveData->accelY, slaveData->accelZ, slaveData->temperature, slaveData->humidity, slaveData->ambientLight, slaveData->sequence);
+        ESP_LOGI(TAG2, "[LOOP] Cycle: %llu ms (< 1000 ms timer)", (esp_timer_get_time() - loopStart) / 1000);
+        if (slaveData != NULL) { // Add this guard to prevent dereferencing a NULL pointer
+            ESP_LOGI(TAG2, "[slaveData] accelX: %u | accelY: %u | accelZ: %u | temperature: %.1f | humdity: %.1f | ambienlight: %u | sequence: %u", 
+                    slaveData->accelX, slaveData->accelY, slaveData->accelZ, slaveData->temperature, slaveData->humidity, slaveData->ambientLight, slaveData->sequence);
+        }
+    }else{
+      ESP_LOGI(TAG2, "master_batteryLevel: %d | master_ambLight: %d | master_PIRValue: %d | master_movingDist: %d ", 
+              master_batteryLevel, master_ambLight, master_PIRValue, master_movingDist);
     }
     timerStream = 0;
   }
