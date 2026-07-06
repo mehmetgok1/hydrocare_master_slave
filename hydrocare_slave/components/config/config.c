@@ -281,7 +281,7 @@ void initIRTemp()
     }
     // 1. Signed/Unsigned Integers
     free(eeMLX90641);
-    MLX90641_SetRefreshRate(0x33, 5);
+    MLX90641_SetRefreshRate(0x33, 0x06);
     int a= MLX90641_GetRefreshRate(0x33);
     ESP_LOGI("IR_TEMP", "MLX90641 Refresh Rate: %d Hz", a);
     ESP_LOGI("IR_TEMP", "Initialization successful. eeMLX90641 heap memory has been safely freed.");
