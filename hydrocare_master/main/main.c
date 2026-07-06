@@ -99,37 +99,37 @@ void sdCardLoggingTask(void *parameter) {
       if (xQueueReceive(dataQueue, &packetToWrite, pdMS_TO_TICKS(100)) == pdTRUE) {
         int64_t taskStart = esp_timer_get_time();  // Start timing (microseconds)
         if (packetToWrite->slaveData.temperature == 0.0 || packetToWrite->slaveData.sequence == 0xFFFF) {
-            ESP_LOGE(TAG2, "[SD-TASK-ERR] Dropped invalid packet (seq=%u, temp=%.1f)", 
-                         packetToWrite->slaveData.sequence, packetToWrite->slaveData.temperature);
-            xQueueSend(emptyQueue, &packetToWrite, 0); 
-            continue;  
+          ESP_LOGE(TAG2, "[SD-TASK-ERR] Dropped invalid packet (seq=%u, temp=%.1f)", 
+                  packetToWrite->slaveData.sequence, packetToWrite->slaveData.temperature);
+          xQueueSend(emptyQueue, &packetToWrite, 0); 
+          continue;  
         }  
         // Calculate which part file to use (every 50 packets = new file)
         uint32_t fileIndex = (*get_packetsLogged() / 50) * 50;
         // Only open a new file if we crossed the 50-packet boundary or starting fresh
         if (fileIndex != currentFileIndex || df == NULL) {
-            if (df != NULL) {
-                // Flush any remaining unaligned bytes to the current file before rotating
-                if (sectorOffset > 0) {
-                    fwrite(sectorBuffer, 1, sectorOffset, df);
-                    sectorOffset = 0;
-                }
-                fflush(df); // Force write of any remaining buffered data and metadata
-                fclose(df); // Close the previous file safely
-                df = NULL;
+          if (df != NULL) {
+            // Flush any remaining unaligned bytes to the current file before rotating
+            if (sectorOffset > 0) {
+              fwrite(sectorBuffer, 1, sectorOffset, df);
+              sectorOffset = 0;
             }
-            char dataFile[128];
-            // Note: Incorporating MOUNT_POINT from your sd.h
-            snprintf(dataFile, sizeof(dataFile), "%s/%s/%s_part_%" PRIu32 ".bin",
-                     MOUNT_POINT, get_sessionFolder(), get_sessionFolder(), fileIndex);   
-            // "ab" = Append Binary mode
-            df = fopen(dataFile, "ab");
-            if (df == NULL) {
-                ESP_LOGE(TAG2, "[SD-TASK-ERR] Failed to open binary file: %s", dataFile);
-                xQueueSend(emptyQueue, &packetToWrite, 0); 
-                continue;
-            }
-            currentFileIndex = fileIndex;
+            fflush(df); // Force write of any remaining buffered data and metadata
+            fclose(df); // Close the previous file safely
+            df = NULL;
+          }
+          char dataFile[128];
+          // Note: Incorporating MOUNT_POINT from your sd.h
+          snprintf(dataFile, sizeof(dataFile), "%s/%s/%s_part_%" PRIu32 ".bin",
+                  MOUNT_POINT, get_sessionFolder(), get_sessionFolder(), fileIndex);   
+          // "ab" = Append Binary mode
+          df = fopen(dataFile, "ab");
+          if (df == NULL) {
+            ESP_LOGE(TAG2, "[SD-TASK-ERR] Failed to open binary file: %s", dataFile);
+            xQueueSend(emptyQueue, &packetToWrite, 0); 
+            continue;
+          }
+          currentFileIndex = fileIndex;
         }
         int64_t writeStart = esp_timer_get_time();  
         size_t totalWritten = 0;
@@ -137,63 +137,59 @@ void sdCardLoggingTask(void *parameter) {
         size_t remaining = sizeof(CombinedDataPacket);
         int writeErrors = 0;
         while (remaining > 0) {
-            // Calculate how much data we can safely fit into our 4KB sector buffer
-            size_t spaceLeft = 4096 - sectorOffset;
-            size_t chunk = (remaining < spaceLeft) ? remaining : spaceLeft;
-            // Copy data to our perfectly-aligned sector buffer
-            memcpy(&sectorBuffer[sectorOffset], pData, chunk);
-            sectorOffset += chunk;
-            pData += chunk;
-            remaining -= chunk;
-            totalWritten += chunk;
-            // Only trigger a physical SD write when we have exactly 4096 bytes
-            if (sectorOffset == 4096) {
-                // fwrite returns the number of items written (in this case, bytes since size is 1)
-                size_t writtenChunk = fwrite(sectorBuffer, 1, 4096, df);
-                
-                if (writtenChunk < 4096) {
-                    writeErrors++;
-                    if (writeErrors > 15) {
-                        ESP_LOGE(TAG2, "[SD-TASK-ERR] Max SD write errors reached.");
-                        break;
-                    }
-                    ESP_LOGW(TAG2, "[SD-TASK-WARN] SD stall. Recovering FATFS state (retry %d/15)...", writeErrors);
-                    
-                    fclose(df);
-                    vTaskDelay(pdMS_TO_TICKS(100)); // Let the SD card finish GC
-                    
-                    char recFile[128];
-                    snprintf(recFile, sizeof(recFile), "%s/%s/%s_part_%" PRIu32 ".bin",
-                             MOUNT_POINT, get_sessionFolder(), get_sessionFolder(), currentFileIndex);
-                    df = fopen(recFile, "ab");
-                    
-                    if (df == NULL) {
-                        ESP_LOGE(TAG2, "[SD-TASK-ERR] Failed to reopen file during recovery.");
-                        break;
-                    }
-                    // Rewind state to retry the block
-                    pData -= chunk;
-                    remaining += chunk;
-                    totalWritten -= chunk;
-                    sectorOffset -= chunk;    
-                    continue; 
-                }       
-                writeErrors = 0; 
-                sectorOffset = 0; // Empty the buffer
-                // Yield to FreeRTOS (was delay(2) in Arduino)
-                vTaskDelay(pdMS_TO_TICKS(2)); 
-            }
+          // Calculate how much data we can safely fit into our 4KB sector buffer
+          size_t spaceLeft = 4096 - sectorOffset;
+          size_t chunk = (remaining < spaceLeft) ? remaining : spaceLeft;
+          // Copy data to our perfectly-aligned sector buffer
+          memcpy(&sectorBuffer[sectorOffset], pData, chunk);
+          sectorOffset += chunk;
+          pData += chunk;
+          remaining -= chunk;
+          totalWritten += chunk;
+          // Only trigger a physical SD write when we have exactly 4096 bytes
+          if (sectorOffset == 4096) {
+            // fwrite returns the number of items written (in this case, bytes since size is 1)
+            size_t writtenChunk = fwrite(sectorBuffer, 1, 4096, df);
+            if (writtenChunk < 4096) {
+              writeErrors++;
+              if (writeErrors > 15) {
+                ESP_LOGE(TAG2, "[SD-TASK-ERR] Max SD write errors reached.");
+                break;
+              }
+              ESP_LOGW(TAG2, "[SD-TASK-WARN] SD stall. Recovering FATFS state (retry %d/15)...", writeErrors);
+              fclose(df);
+              vTaskDelay(pdMS_TO_TICKS(100)); // Let the SD card finish GC
+              char recFile[128];
+              snprintf(recFile, sizeof(recFile), "%s/%s/%s_part_%" PRIu32 ".bin",
+                      MOUNT_POINT, get_sessionFolder(), get_sessionFolder(), currentFileIndex);
+              df = fopen(recFile, "ab");
+              if (df == NULL) {
+                ESP_LOGE(TAG2, "[SD-TASK-ERR] Failed to reopen file during recovery.");
+                break;
+              }
+              // Rewind state to retry the block
+              pData -= chunk;
+              remaining += chunk;
+              totalWritten -= chunk;
+              sectorOffset -= chunk;    
+              continue; 
+            }       
+            writeErrors = 0; 
+            sectorOffset = 0; // Empty the buffer
+            // Yield to FreeRTOS (was delay(2) in Arduino)
+            vTaskDelay(pdMS_TO_TICKS(2)); 
+          }
         }
         int64_t writeTime = esp_timer_get_time() - writeStart;
         if (totalWritten != sizeof(CombinedDataPacket)) {
-            ESP_LOGE(TAG2, "[SD-TASK-ERR] Incomplete write! Expected %u bytes, wrote %u bytes", 
-                         sizeof(CombinedDataPacket), totalWritten);
+          ESP_LOGE(TAG2, "[SD-TASK-ERR] Incomplete write! Expected %u bytes, wrote %u bytes", 
+          sizeof(CombinedDataPacket), totalWritten);
         }
         *get_packetsLogged()=*get_packetsLogged()+1;
         int64_t taskDuration = (esp_timer_get_time() - taskStart) / 1000; // Convert to milliseconds
         if(debug_infos) {
             ESP_LOGI(TAG2, "[SD-TASK] Packet #%" PRIu32 " | Write: %lld us | Total: %lld ms",
-                         *get_packetsLogged(), writeTime, taskDuration);
+                    *get_packetsLogged(), writeTime, taskDuration);
         }
         xQueueSend(emptyQueue, &packetToWrite, 0);
       } else {
