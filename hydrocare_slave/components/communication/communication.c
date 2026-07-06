@@ -119,13 +119,13 @@ void collectMeasurementData() {
     currentData.ambientLight = ambLight_result;
   }
   int64_t tAmbientEnd = esp_timer_get_time();
-  // 2. Grab high-speed accel + mic samples from ring buffer (last 2000 @ 2kHz = 1 second of data)
-  int endIdx = ringBufferIndex;
-  int startIdx = (endIdx - 2000 + RING_BUFFER_SIZE) % RING_BUFFER_SIZE;
-  // Copy 2000 consecutive samples into packet
+  // 2. Grab high-speed accel + mic samples from ring buffer (last 400 @ 2kHz = 0.2 second of data)
+  // Copy 400 consecutive samples into packet
   int64_t tRingStart = esp_timer_get_time();
   taskENTER_CRITICAL(&samplerMux);
-  for (int i = 0; i < 2000; i++) {
+  int endIdx = ringBufferIndex;
+  int startIdx = (endIdx - 400 + RING_BUFFER_SIZE) % RING_BUFFER_SIZE;
+  for (int i = 0; i < 400; i++) {
     int srcIdx = (startIdx + i) % RING_BUFFER_SIZE;
     currentData.accelX_samples[i] = accelX_ring[srcIdx];
     currentData.accelY_samples[i] = accelY_ring[srcIdx];
@@ -134,7 +134,7 @@ void collectMeasurementData() {
   }
   taskEXIT_CRITICAL(&samplerMux);
   int64_t tRingEnd = esp_timer_get_time();
-  currentData.accelSampleCount = 2000;  // Full 1 second of 2kHz data
+  currentData.accelSampleCount = 400;  // Full 0.2 second of 2kHz data
   currentData.accelX = accelX_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
   currentData.accelY = accelY_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
   currentData.accelZ = accelZ_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
@@ -197,7 +197,7 @@ void collectMeasurementData() {
 static void bmeSamplerTask(void *pvParameters) {
   (void) pvParameters;
   TickType_t xLastWakeTime;
-  const TickType_t xFrequency = pdMS_TO_TICKS(250);
+  const TickType_t xFrequency = pdMS_TO_TICKS(100);
 
   xLastWakeTime = xTaskGetTickCount();
   while (1) {
@@ -286,7 +286,7 @@ void setup_timer() {
 static void irSamplerTask(void *pvParameters) {
   (void) pvParameters;
   TickType_t xLastWakeTime;
-  const TickType_t xFrequency = pdMS_TO_TICKS(200);
+  const TickType_t xFrequency = pdMS_TO_TICKS(100);
 
   // Initialise the xLastWakeTime variable with the current time.
   xLastWakeTime = xTaskGetTickCount();

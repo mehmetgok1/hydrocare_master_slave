@@ -5,6 +5,7 @@
 #include "esp_adc/adc_oneshot.h"
 #include "esp_adc/adc_cali.h"
 #include "esp_adc/adc_cali_scheme.h"
+#include "esp_adc/adc_continuous.h"
 #include "esp_log.h"
 #include <stdbool.h>
 #include "driver/spi_master.h"
@@ -27,6 +28,7 @@ void initPeripherals();
 
 // Getter functions for ADC handles and calibration status
 adc_oneshot_unit_handle_t get_adc1_handle(void);
+adc_continuous_handle_t get_adc_cont_handle(void);
 SemaphoreHandle_t get_adc_mutex(void);
 adc_cali_handle_t get_adc1_cali_handle_chan0(void);
 adc_cali_handle_t get_adc1_cali_handle_chan1(void);

@@ -4,14 +4,19 @@
 #include "lis3dh.h"
 #include "lis3dh_types.h"
 
+// For Continuous ADC
+#include "esp_adc/adc_continuous.h"
+
 #define fw_version  "0.0.14"
 // Static handles for the ADC driver and calibration to encapsulate them within this file.
 static adc_oneshot_unit_handle_t adc1_handle;
+static adc_continuous_handle_t adc_cont_handle = NULL;
 static SemaphoreHandle_t adc_mutex = NULL;
 static adc_cali_handle_t adc1_cali_handle_chan0 = NULL;
 static adc_cali_handle_t adc1_cali_handle_chan1 = NULL;
 static bool adc_cali_enabled_chan0 = false;
 static bool adc_cali_enabled_chan1 = false;
+
 // spi for slave to peripheral communication
 spi_device_handle_t spi_bme_handle;
 spi_device_handle_t spi_lis3dh_handle;
@@ -114,6 +119,7 @@ void init_adc_peripheral()
     }
 
     // ===== Initialize ADC1 for One-Shot Mode =====
+    // This handle will now only be used for the ambient light sensor
     adc_oneshot_unit_init_cfg_t init_config1 = {
         .unit_id = ADC_UNIT_1,
         .ulp_mode = ADC_ULP_MODE_DISABLE,
@@ -121,17 +127,45 @@ void init_adc_peripheral()
     ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
 
     // ===== Configure ADC Channels =====
-    adc_oneshot_chan_cfg_t config = {
+    // Configure Ambient Light channel (ADC1_CH0) for one-shot mode
+    adc_oneshot_chan_cfg_t config_ch0 = {
         .bitwidth = ADC_BITWIDTH_12,
         .atten = ADC_ATTEN_DB_12,
     };
-    // AmbLight is on GPIO1 -> ADC1_CH0
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_0, &config));
-    // IA_Out (Microphone) is on GPIO2 -> ADC1_CH1
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_1, &config));
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_0, &config_ch0));
+
+    // ===== Initialize ADC1 for Continuous (DMA) Mode for Microphone =====
+    adc_continuous_handle_cfg_t adc_config = {
+        .max_store_buf_size = 1024,
+        .conv_frame_size = 256, // Should be a multiple of SOC_ADC_DIGI_DATA_BYTES_PER_CONV (4)
+    };
+    ESP_ERROR_CHECK(adc_continuous_new_handle(&adc_config, &adc_cont_handle));
+
+    // Configure Microphone channel (ADC1_CH1) for continuous mode
+    adc_digi_pattern_config_t adc_pattern_config = {
+        .atten = ADC_ATTEN_DB_12,
+        .channel = ADC_CHANNEL_1,
+        .unit = ADC_UNIT_1,
+        .bit_width = ADC_BITWIDTH_12,
+    };
+    adc_continuous_config_t dig_cfg = {
+        .sample_freq_hz = 20 * 1000, // Sample faster than we need
+        .conv_mode = ADC_CONV_SINGLE_UNIT_1,
+        .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,
+        .pattern_num = 1,
+        .adc_pattern = &adc_pattern_config,
+    };
+    ESP_ERROR_CHECK(adc_continuous_config(adc_cont_handle, &dig_cfg));
+
     // ===== Initialize ADC Calibration =====
+    // Note: Continuous ADC (DMA) does not support the calibration driver directly.
+    // We initialize it here to get the characteristics, and then apply the calibration manually.
     adc_cali_enabled_chan0 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_0, ADC_ATTEN_DB_12, &adc1_cali_handle_chan0);
     adc_cali_enabled_chan1 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_1, ADC_ATTEN_DB_12, &adc1_cali_handle_chan1);
+
+    // Start the continuous ADC
+    ESP_ERROR_CHECK(adc_continuous_start(adc_cont_handle));
+    ESP_LOGI(TAG, "Continuous ADC for microphone started.");
 }
 void init_spi_peripheral()
 {
@@ -307,6 +341,11 @@ bme680_sensor_t* get_bme_dev_handle(void)
 adc_oneshot_unit_handle_t get_adc1_handle(void)
 {
     return adc1_handle;
+}
+
+adc_continuous_handle_t get_adc_cont_handle(void)
+{
+    return adc_cont_handle;
 }
 
 SemaphoreHandle_t get_adc_mutex(void)

@@ -23,7 +23,7 @@ void measureLIS3DH(lis3dh_float_data_t* accel_results);
 bool read_thermal_matrix_frame(float* mlx90641Frame, float* Tamb);
 
 // microphone measurement function
-bool measureMicrophone(uint16_t* mic_result);
+bool measureMicrophone(uint16_t* mic_result); // This is now the fast version
 
 // ambient light measurement function
 bool measureAmbLight(uint16_t* ambLight);

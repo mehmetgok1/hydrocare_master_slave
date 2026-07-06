@@ -36,28 +36,33 @@ bool measureAmbLight(uint16_t* ambLight)
 
 bool measureMicrophone(uint16_t* mic_result)
 {
-  int raw2 = 0;
-  int voltage_mv2 = 0;
-  SemaphoreHandle_t adcMutex = get_adc_mutex();
-  if (!adcMutex || xSemaphoreTake(adcMutex, portMAX_DELAY) != pdTRUE) {
-    ESP_LOGE("MEASUREMENT", "ADC mutex unavailable for microphone read!");
-    return false;
-  }
-
-    esp_err_t err = adc_oneshot_read(get_adc1_handle(), ADC_CHANNEL_1, &raw2);
-  xSemaphoreGive(adcMutex);
+    // This buffer should be large enough for one conversion frame
+    static uint8_t result[256];
+    uint32_t out_len;
+    adc_continuous_handle_t handle = get_adc_cont_handle();
+    
+    // Read from DMA buffer. This is non-blocking and returns immediately.
+    // It gives us the most recently filled chunk of data.
+    esp_err_t err = adc_continuous_read(handle, result, sizeof(result), &out_len, 0);
+    if (err == ESP_ERR_TIMEOUT) {
+        // This is not a fatal error, just means no new data was ready.
+        // The caller can retry or use the last known value.
+        return false; 
+    }
     if (err != ESP_OK) {
-        ESP_LOGE("MEASUREMENT", "Failed to read raw ADC1 Channel 1 value!");
-        return false; // Return 0 (False) on failure
+        ESP_LOGE(TAG, "Continuous ADC Read failed: %s", esp_err_to_name(err));
+        return false;
     }
-
+    // We only need the very last sample from the buffer.
+    adc_digi_output_data_t *p = (void*)&result[out_len - sizeof(adc_digi_output_data_t)];
+    uint16_t raw = p->type2.data;
+    int voltage_mv = 0;
     if (is_adc_cali_enabled_chan1()) {
-        adc_cali_raw_to_voltage(get_adc1_cali_handle_chan1(), raw2, &voltage_mv2);
+        adc_cali_raw_to_voltage(get_adc1_cali_handle_chan1(), raw, &voltage_mv);
     } else {
-        voltage_mv2 = (int)((raw2 / 4095.0f) * VREF * 1000.0f);
+        voltage_mv = (int)((raw / 4095.0f) * VREF * 1000.0f);
     }
-
-    *mic_result = (uint16_t)voltage_mv2;
+    *mic_result = (uint16_t)voltage_mv;
     return true; // Return true on success
 }
 static uint16_t mlx90641FrameData[242]; // MLX90641 raw frame buffer
