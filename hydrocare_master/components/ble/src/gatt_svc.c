@@ -1,4 +1,5 @@
 #include "ble.h"
+#include "sd.h"
 
 /* Private function declarations */
 static int gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
@@ -162,17 +163,25 @@ static void handle_action_write(struct os_mbuf *om) {
         time(&now);
         // 2. Convert to local time
         localtime_r(&now, &timeinfo);
-        strftime(sessionFolder, sizeof(sessionFolder), "%y%m", &timeinfo);
+        // Generate timestamp: YYYYMMDD_HHMMSS (İkinci koda benzetildi)
+        strftime(sessionFolder, sizeof(sessionFolder), "%Y%m%d_%H%M%S", &timeinfo);
         packetsLogged = 0;
-
-        // Create the session directory on the SD card. This is the logical place for this action.
+        // Create the session directory on the SD card
         char session_dir_path[128];
-        snprintf(session_dir_path, sizeof(session_dir_path), "/hydrocare_sd/%s", sessionFolder);
+        snprintf(session_dir_path, sizeof(session_dir_path), MOUNT_POINT"/%s", sessionFolder);
+        ESP_LOGI(TAG, "Creating session folder: %s", session_dir_path);
         struct stat st = {0};
+        // Eğer klasör yoksa oluşturmayı dene
         if (stat(session_dir_path, &st) == -1) {
-            mkdir(session_dir_path, 0755); // 0755 gives r/w/x for owner, r/x for others
+            int created = mkdir(session_dir_path, 0755); // 0755: owner r/w/x, others r/x   
+            if (created == 0) {
+                ESP_LOGI(TAG, "Session folder created successfully: %s", session_dir_path);
+            } else {
+                ESP_LOGE(TAG, "Session folder creation failed: %s", session_dir_path);
+            }
+        } else {
+            ESP_LOGI(TAG, "Session folder already exists: %s", session_dir_path);
         }
-
         sessionInitialized = true;
         ESP_LOGI(TAG, "[BLE] Session files ready for logging");
     } else if (strncmp(command, "Com;Stop", 8) == 0) {
