@@ -206,6 +206,9 @@ SensorDataPacket* readSlaveData(void) {
     
     if (!locked) {
         ESP_LOGE(TAG, "Timeout waiting for STATUS_LOCKED");
+        // If we timed out here, we already sent a LOCK command.
+        // We must send an UNLOCK to reset the slave for the next cycle.
+        //spiWrite(ADDR_CTRL, CTRL_UNLOCK_BUFFERS);
         return NULL;
     }
 

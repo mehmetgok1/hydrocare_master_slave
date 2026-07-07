@@ -8,7 +8,7 @@
 
 
 #define TIMER_RESOLUTION_HZ 1000000 
-#define TIMER_ALARM_US      1000000 
+#define TIMER_ALARM_US      200000 
 
 void initTimer(volatile bool *target_flag);
 void setTimer();

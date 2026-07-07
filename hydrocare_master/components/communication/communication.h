@@ -62,10 +62,10 @@ typedef struct {
   uint16_t accelSampleCount;      // Number of samples
   
   // High-speed samples (2kHz sampling over 1 second measurement window)
-  int16_t accelX_samples[2000];
-  int16_t accelY_samples[2000];
-  int16_t accelZ_samples[2000];
-  uint16_t microphoneSamples[2000];
+  int16_t accelX_samples[400];
+  int16_t accelY_samples[400];
+  int16_t accelZ_samples[400];
+  uint16_t microphoneSamples[400];
   
   // Camera data
   uint16_t rgbFrame[4096];        // RGB565 64x64
@@ -74,7 +74,7 @@ typedef struct {
 #pragma pack()
 
 #define SPI_CLOCK_HZ     10000000   // 10 MHz 
-#define SPI_BUFFER_SIZE  25600      // 25.6KB buffer (handles ~24.6KB packet with 2k samples + margin)
+#define SPI_BUFFER_SIZE  12288      // 25.6KB buffer (handles ~24.6KB packet with 2k samples + margin)
 
 // Slave status bits
 #define STATUS_MEASURING 0x01

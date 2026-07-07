@@ -316,12 +316,14 @@ void loop() {
               irFrame16x12, sizeof(irFrame16x12));
     
     // Total loop execution time
-    if(1){
-        ESP_LOGI(TAG2, "[LOOP] Cycle: %llu ms (< 1000 ms timer)", (esp_timer_get_time() - loopStart) / 1000);
+    if(debug_infos) {
+        ESP_LOGI(TAG2, "[LOOP] Cycle: %llu ms (< 200 ms timer)", (esp_timer_get_time() - loopStart) / 1000);
         if (slaveData != NULL) { // Add this guard to prevent dereferencing a NULL pointer
             ESP_LOGI(TAG2, "[slaveData] accelX: %u | accelY: %u | accelZ: %u | temperature: %.1f | humdity: %.1f | ambienlight: %u | sequence: %u", 
                     slaveData->accelX, slaveData->accelY, slaveData->accelZ, slaveData->temperature, slaveData->humidity, slaveData->ambientLight, slaveData->sequence);
         }
+    }else {
+        printf("%d ", slaveData->sequence);
     }
     timerStream = 0;
   }
