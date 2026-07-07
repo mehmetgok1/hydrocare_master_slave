@@ -174,18 +174,16 @@ SensorDataPacket* readSlaveData(void) {
     bool measured = false;
     while (get_millis() - startTime < 2000) {
         status = spiRead(ADDR_STATUS);
-        if (status != 0xFF && (status & STATUS_MEASURED)) {
+        if ( status == STATUS_MEASURED) {
             measured = true;
             break;
         }
-        vTaskDelay(pdMS_TO_TICKS(5));
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
-    
     if (!measured) {
         ESP_LOGE(TAG, "Timeout waiting for STATUS_MEASURED");
         return NULL;
     }
-
     // ========== STEP 3: Set Lock ==========
     spiWrite(ADDR_CTRL, CTRL_LOCK_BUFFERS);
     if(debug_infos) ESP_LOGI(TAG, "write lock data trigger");
@@ -196,18 +194,14 @@ SensorDataPacket* readSlaveData(void) {
     bool locked = false;
     while (get_millis() - startTime < 2000) {
         status = spiRead(ADDR_STATUS);
-        if (status != 0xFF && (status & STATUS_LOCKED)) {
+        if (status == STATUS_LOCKED) {
             locked = true;
             break;
         }
         vTaskDelay(pdMS_TO_TICKS(5));
     }
-    
     if (!locked) {
         ESP_LOGE(TAG, "Timeout waiting for STATUS_LOCKED");
-        // If we timed out here, we already sent a LOCK command.
-        // We must send an UNLOCK to reset the slave for the next cycle.
-        //spiWrite(ADDR_CTRL, CTRL_UNLOCK_BUFFERS);
         return NULL;
     }
 

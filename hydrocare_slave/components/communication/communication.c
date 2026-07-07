@@ -7,7 +7,7 @@ static const char *TAG = "SPI_COMM";
 
 // Global SPI transaction (initialized once, reused for all transactions)
 static spi_slave_transaction_t slaveSpiTransaction = {};
-bool debug_code=false;
+bool debug_code=true;
 // Global sensor data
 static SensorDataPacket currentData = {0};
 static int16_t accelX_ring[RING_BUFFER_SIZE] = {0};
@@ -42,12 +42,25 @@ static EventGroupHandle_t spiEventGroup = NULL;
 static SemaphoreHandle_t currentDataMutex = NULL;
 static portMUX_TYPE samplerMux = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t measurementTaskHandle = NULL;
+static TaskHandle_t spiCommandHandlerTaskHandle = NULL;
 static TaskHandle_t samplerTaskHandle = NULL;
 static TaskHandle_t irTaskHandle = NULL;
 static TaskHandle_t bmeTaskHandle = NULL;
 
 // Event group bits
 #define EVENT_TRIGGER_RECEIVED (1 << 0)    // Trigger command received
+
+// =========== SPI Interrupt Handling ===========
+static SemaphoreHandle_t spiCommandSemaphore = NULL;
+
+// ISR called after each SPI transaction
+static void IRAM_ATTR post_trans_cb(spi_slave_transaction_t *trans) {
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    xSemaphoreGiveFromISR(spiCommandSemaphore, &xHigherPriorityTaskWoken);
+    if (xHigherPriorityTaskWoken) {
+        portYIELD_FROM_ISR();
+    }
+}
 
 // ============ Initialization ============
 void initSPIComm() {
@@ -80,7 +93,7 @@ void initSPIComm() {
     .queue_size    = 1,
     .mode          = 0,  // SPI_MODE0
     .post_setup_cb = NULL,
-    .post_trans_cb = NULL,
+    .post_trans_cb = post_trans_cb,
   };
 
   esp_err_t ret = spi_slave_initialize(SPI2_HOST, &buscfg, &slvcfg, SPI_DMA_CH_AUTO);
@@ -91,8 +104,9 @@ void initSPIComm() {
   
   // Create FreeRTOS synchronization primitives
   spiEventGroup = xEventGroupCreate();
+  spiCommandSemaphore = xSemaphoreCreateBinary();
   currentDataMutex = xSemaphoreCreateMutex();
-  if (!spiEventGroup || !currentDataMutex) {
+  if (!spiEventGroup || !currentDataMutex || !spiCommandSemaphore) {
     ESP_LOGE(TAG, "Mutex/EventGroup creation failed!");
     while(1) vTaskDelay(pdMS_TO_TICKS(1000));
   }
@@ -102,6 +116,12 @@ void initSPIComm() {
   slaveSpiTransaction.length    = SPI_BUFFER_SIZE * 8;
   slaveSpiTransaction.rx_buffer = rxBuf;
   slaveSpiTransaction.tx_buffer = txBuf;
+
+  // Queue the first transaction to be ready for the master
+  ret = spi_slave_queue_trans(SPI2_HOST, &slaveSpiTransaction, portMAX_DELAY);
+  if (ret != ESP_OK) {
+      ESP_LOGE(TAG, "Failed to queue initial SPI transaction: %s", esp_err_to_name(ret));
+  }
   
   ESP_LOGI(TAG, "SPI Ready - Concurrent architecture with background measurement task");
 }
@@ -119,8 +139,6 @@ void collectMeasurementData() {
     currentData.ambientLight = ambLight_result;
   }
   int64_t tAmbientEnd = esp_timer_get_time();
-  // 2. Grab high-speed accel + mic samples from ring buffer (last 400 @ 2kHz = 0.2 second of data)
-  // Copy 400 consecutive samples into packet
   int64_t tRingStart = esp_timer_get_time();
   taskENTER_CRITICAL(&samplerMux);
   int endIdx = ringBufferIndex;
@@ -213,7 +231,7 @@ static void bmeSamplerTask(void *pvParameters) {
     bme_cache_valid = true;
     taskEXIT_CRITICAL(&bmeMux);
 
-    if (debug_code) {
+    if (0) {
       ESP_LOGI(TAG, "BME Sampler: cached buffer %d in %lld us (T=%.2f C, H=%.2f %%)",
                write_idx, (long long)(t1 - t0), sample.temperature, sample.humidity);
     }
@@ -234,9 +252,6 @@ static void measurementCollectorTask(void *pvParameters) {
       portMAX_DELAY
     );
     if (uxBits & EVENT_TRIGGER_RECEIVED) {
-      if(debug_code){
-        ESP_LOGI(TAG, "Measurement Task Triggered! Starting data collection...");
-      }
       collectMeasurementData();
       txBuf[1] = STATUS_MEASURED;
       slaveState = STATE_READY_TRANSFER;
@@ -309,23 +324,10 @@ static void irSamplerTask(void *pvParameters) {
   }
 }
 
-void initBMESamplerTask() {
-  if (!bmeTaskHandle) {
-    xTaskCreatePinnedToCore(
-      bmeSamplerTask,
-      "BMESampler",
-      4096,
-      NULL,
-      1,
-      &bmeTaskHandle,
-      0);
-    ESP_LOGI(TAG, "BME sampler task started on Core 0");
-  }
-}
 
 static void highSpeedSamplerTask(void *pvParameters) {
     ESP_LOGI(TAG, "HighSpeedSampler Task Started");
-
+    static uint32_t sampler_overrun_count = 0;
     while (1) {
         if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
             /* Fine-grained timing to isolate which stage causes overruns */
@@ -347,9 +349,6 @@ static void highSpeedSamplerTask(void *pvParameters) {
             int64_t lis_us = t2 - t1;
             int64_t crit_us = t3 - t2;
             int64_t total_us = t3 - t0;
-            static uint32_t sampler_overrun_count = 0;
-            static uint32_t sampler_sample_count = 0;
-            sampler_sample_count++;
             if (total_us > 500) {
               sampler_overrun_count++;
               if (debug_code || (sampler_overrun_count % 50 == 0)) {
@@ -361,22 +360,8 @@ static void highSpeedSamplerTask(void *pvParameters) {
     }
 }
 // ============ Main SPI Command Handler - Address-Based Protocol ============
-void receiveCommand() {
-  // ===== STEP 1: EXECUTE SINGLE TRANSACTION (BLOCKING) =====
-  // Global slaveSpiTransaction reused - initialized once in initSPIComm()
-  // txBuf[0] = dummy, txBuf[1] = status (both maintained globally)
-  // txBuf[2+] = sensor data (prefilled after LOCK)
-  esp_err_t ret = spi_slave_transmit(SPI2_HOST, &slaveSpiTransaction, 100);
-  
-  if (ret != ESP_OK) {
-    if (ret == ESP_ERR_TIMEOUT) {
-      return;  // Normal - no master activity yet
-    } else {
-      ESP_LOGE(TAG, "SPI Error: %s", esp_err_to_name(ret));
-      return;
-    }
-  }
-  // ===== STEP 2: PROCESS RECEIVED COMMAND =====
+void process_spi_command() {
+  // The transaction has already happened, we just process the data.
   uint8_t cmdByte = rxBuf[0];
   uint8_t isRead = (cmdByte & PROTO_CMD_READ) ? 1 : 0;
   uint8_t address = cmdByte & PROTO_ADDR_MASK;
@@ -395,9 +380,6 @@ void receiveCommand() {
           txBuf[1] = STATUS_MEASURING;
           // Signal background measurement task
           xEventGroupSetBits(spiEventGroup, EVENT_TRIGGER_RECEIVED);
-          if(debug_code){
-            ESP_LOGI(TAG, "Measurement triggered");
-          }
         } else {
           ESP_LOGW(TAG, "TRIGGER ignored in state %d, txBuf[1]=0x%02X (waiting for LOCK/UNLOCK to finish)", slaveState, txBuf[1]);
         }
@@ -464,7 +446,49 @@ void receiveCommand() {
   }
 }
 
+static void spiCommandHandlerTask(void *pvParameters) {
+    ESP_LOGI(TAG, "SPI Command Handler Task started.");
+    while(1) {
+        // Wait for a transaction to complete (signaled by the ISR)
+        if (xSemaphoreTake(spiCommandSemaphore, portMAX_DELAY) == pdTRUE) {
+            // Process the received command
+            process_spi_command();
+
+            // Immediately queue the next transaction to be ready for the master.
+            // This is crucial for the interrupt-driven model.
+            esp_err_t ret = spi_slave_queue_trans(SPI2_HOST, &slaveSpiTransaction, portMAX_DELAY);
+            if (ret != ESP_OK) {
+                ESP_LOGE(TAG, "Failed to queue subsequent SPI transaction: %s", esp_err_to_name(ret));
+            }
+        }
+    }
+}
 // ============ Exposed Functions ============
+void initBMESamplerTask() {
+  if (!bmeTaskHandle) {
+    xTaskCreatePinnedToCore(
+      bmeSamplerTask,
+      "BMESampler",
+      4096,
+      NULL,
+      1,
+      &bmeTaskHandle,
+      0);
+    ESP_LOGI(TAG, "BME sampler task started on Core 0");
+  }
+}
+void startSpiCommandHandlerTask() {
+    xTaskCreatePinnedToCore(
+        spiCommandHandlerTask,
+        "SpiCmdHandler",
+        4096,
+        NULL,
+        3, // High priority to quickly handle SPI commands
+        &spiCommandHandlerTaskHandle,
+        0 // Core 0 for general tasks
+    );
+    ESP_LOGI(TAG, "SPI command handler task created on Core 0");
+}
 
 // Start the background measurement task (call from main setup)
 void startMeasurementTask() {
@@ -488,9 +512,9 @@ void startHighSpeedSamplerTask() {
     "HighSpeedSampler",
     8192,          // Stack size (8 KB - safe for SPI + ADC operations)
     NULL,           // Parameters
-    0,            // High priority to ensure timely sampling
+    configMAX_PRIORITIES - 1, // Highest priority to ensure timely sampling and prevent overruns
     &samplerTaskHandle,
-    1               // Core 1 (dedicated to sampling, Core 0 free for SPI + measurement)
+    0               // Core 0, same as the timer and other tasks for simplicity
   );
 }
 void initIRSamplerTask() {

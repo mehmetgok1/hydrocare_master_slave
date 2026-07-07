@@ -71,6 +71,7 @@ typedef enum {
 // ============ FUNCTION DECLARATIONS ============
 void initSPIComm();
 void receiveCommand();
+void startSpiCommandHandlerTask();
 void startMeasurementTask();          // Start background measurement collector task
 void startHighSpeedSamplerTask();     // Start 2kHz accel+mic sampler task
 void setup_timer();                    // Setup timer for periodic tasks

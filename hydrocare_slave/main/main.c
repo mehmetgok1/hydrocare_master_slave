@@ -1,5 +1,6 @@
 #include <inttypes.h>    // For vTaskDelay if uncommented
 #include "communication.h"
+#include "freertos/FreeRTOS.h"
 static const char *TAG = "MAIN";
 
 
@@ -11,14 +12,16 @@ void app_main(void) {
 
   // Start background tasks
   setup_timer();
+  startSpiCommandHandlerTask();
   startHighSpeedSamplerTask();
   startMeasurementTask();
   initIRSamplerTask();
   initBMESamplerTask();
   vTaskDelay(pdMS_TO_TICKS(50));  // Allow tasks to initialize
   
+  // The main loop is now free. The SPI commands are handled by interrupts.
   while (1) {
-    receiveCommand();
+    vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
 /*
