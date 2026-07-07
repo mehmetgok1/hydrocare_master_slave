@@ -116,10 +116,10 @@ void spiWrite(uint8_t address, uint8_t data) {
     esp_rom_delay_us(50);
 }
 
-void spiReadBulk(uint8_t address, uint8_t *buffer, uint16_t numBytes) {
-    if (address > 0x7F || !buffer || numBytes > SPI_BUFFER_SIZE) {
+static uint8_t* spiReadBulk(uint8_t address, uint16_t numBytes) {
+    if (address > 0x7F || numBytes > SPI_BUFFER_SIZE) {
         ESP_LOGE(TAG, "Bulk read invalid arguments");
-        return;
+        return NULL;
     }
 
     // Set only the command bytes. The rest of spiTxBuffer is already 0x00 from calloc.
@@ -141,14 +141,13 @@ void spiReadBulk(uint8_t address, uint8_t *buffer, uint16_t numBytes) {
     
     uint8_t statusByte = spiRxBuffer[1];
     
-    // Copy the pure payload (skipping the cmd/status bytes) into the user's struct
-    memcpy(buffer, &spiRxBuffer[2], numBytes);
-
     esp_rom_delay_us(50);
 
     if(debug_infos) {
         ESP_LOGI(TAG, "Bulk read complete: Status=0x%02X, Bytes=%u", statusByte, numBytes);
     }
+    // Return a pointer to the start of the actual payload data
+    return &spiRxBuffer[2];
 }
 
 // ==================== CONVENIENCE FUNCTIONS ====================
@@ -190,7 +189,7 @@ SensorDataPacket* readSlaveData(void) {
     // ========== STEP 3: Set Lock ==========
     spiWrite(ADDR_CTRL, CTRL_LOCK_BUFFERS);
     if(debug_infos) ESP_LOGI(TAG, "write lock data trigger");
-    vTaskDelay(pdMS_TO_TICKS(5));
+    vTaskDelay(pdMS_TO_TICKS(10));
 
     // ========== STEP 4: Poll for LOCKED status ==========
     startTime = get_millis();
@@ -213,16 +212,17 @@ SensorDataPacket* readSlaveData(void) {
     }
 
     // ========== STEP 5: Bulk Read Sensor Data ==========
-    spiReadBulk(ADDR_SENSOR_DATA, spiRxBuffer, SPI_BUFFER_SIZE);
+    // The function now returns a pointer to the payload inside the DMA buffer.
+    uint8_t* payloadPtr = spiReadBulk(ADDR_SENSOR_DATA, sizeof(SensorDataPacket));
     if(debug_infos) ESP_LOGI(TAG, "Ready to process sensor data packet");
 
     // ========== STEP 6: Release Lock ==========
-    vTaskDelay(pdMS_TO_TICKS(5));
+    vTaskDelay(pdMS_TO_TICKS(10));
     spiWrite(ADDR_CTRL, CTRL_UNLOCK_BUFFERS);
     if(debug_infos) ESP_LOGI(TAG, "write unlock buffers command");
     vTaskDelay(pdMS_TO_TICKS(5));
 
-    SensorDataPacket *packet = (SensorDataPacket*)(spiRxBuffer);
+    SensorDataPacket *packet = (SensorDataPacket*)(payloadPtr);
     
     if(debug_infos) {
         ESP_LOGI(TAG, "[Packet] Sequence: %u | Temp: %.1f C | Humidity: %.1f %% | Light: %u",
