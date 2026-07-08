@@ -405,24 +405,31 @@ uint8_t lis3dh_get_raw_data_fifo (lis3dh_sensor_t* dev, lis3dh_raw_data_fifo_t r
     uint8_t samples = fifo_src.FFS + (fifo_src.OVRN_FIFO ? 1 : 0);
 
     // read samples from FIFO
-    for (int i = 0; i < samples; i++)
-        if (!lis3dh_reg_read (dev, LIS3DH_REG_OUT_X_L, (uint8_t*)&raw[i], 6))
-        {
-            error_dev ("Could not get raw data samples", __FUNCTION__, dev);
-            dev->error_code |= LIS3DH_GET_RAW_DATA_FIFO_FAILED;
-            return i;
-        }
-
+    //for (int i = 0; i < samples; i++)
+    //    if (!lis3dh_reg_read (dev, LIS3DH_REG_OUT_X_L, (uint8_t*)&raw[i], 6))
+    //    {
+    //        error_dev ("Could not get raw data samples", __FUNCTION__, dev);
+    //        dev->error_code |= LIS3DH_GET_RAW_DATA_FIFO_FAILED;
+    //        return i;
+    //    }
+    // Burst read all samples from the FIFO in one single SPI transaction
+    uint16_t total_bytes = samples * 6;
+    if (!lis3dh_reg_read(dev, LIS3DH_REG_OUT_X_L, (uint8_t*)raw, total_bytes))
+    {
+        error_dev("Could not get raw data samples in burst read", __FUNCTION__, dev);
+        dev->error_code |= LIS3DH_GET_RAW_DATA_FIFO_FAILED;
+        return 0; 
+    }
     lis3dh_reg_read (dev, LIS3DH_REG_FIFO_SRC, (uint8_t*)&fifo_src, 1);
     
-    // if FFS is not 0 after all samples read, ODR is higher than fetching rate
+    /*// if FFS is not 0 after all samples read, ODR is higher than fetching rate
     if (fifo_src.FFS)
     {
         dev->error_code = LIS3DH_ODR_TOO_HIGH;
         error_dev ("New samples stored in FIFO while reading, "
                    "output data rate (ODR) too high", __FUNCTION__, dev);
         return 0;
-    }
+    }*/
 
     if (dev->fifo_mode == lis3dh_fifo && samples == 32)
     {
@@ -999,7 +1006,7 @@ bool lis3dh_reg_write(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, uint16_t
 }
 
 
-#define LIS3DH_SPI_BUF_SIZE 64      // SPI register data buffer size of ESP866
+#define LIS3DH_SPI_BUF_SIZE 256      // SPI register data buffer size of ESP866
 
 #define LIS3DH_SPI_READ_FLAG      0x80
 #define LIS3DH_SPI_WRITE_FLAG     0x00
@@ -1024,7 +1031,11 @@ static bool lis3dh_spi_read(lis3dh_sensor_t* dev, uint8_t reg, uint8_t *data, ui
 
     // Clear tx_buf and set the first byte to the register address 
     memset(tx_buf, 0x00, total_len); 
-    tx_buf[0] = reg | LIS3DH_SPI_READ_FLAG | LIS3DH_SPI_AUTO_INC_FLAG;
+    // Set the read flag. Only set the auto-increment flag for multi-byte (burst) reads.
+    tx_buf[0] = reg | LIS3DH_SPI_READ_FLAG;
+    if (len > 1) {
+        tx_buf[0] |= LIS3DH_SPI_AUTO_INC_FLAG;
+    }
     memset(&t, 0, sizeof(t));      // Ensure the transaction struct has no garbage values
     t.length = total_len * 8;       // Total bits to transmit/receive
     t.tx_buffer = tx_buf;           

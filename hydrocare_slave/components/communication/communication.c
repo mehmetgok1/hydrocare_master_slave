@@ -380,40 +380,53 @@ void setup_timer() {
     while (1) vTaskDelay(pdMS_TO_TICKS(1000));
   }
 }
-
+        /*read_samples=measureLIS3DH_FIFO(accel_results_fifo);
+        if(read_samples > 0){
+          ESP_LOGI(TAG, "LIS3DH : Samples read from FIFO: %d", read_samples);
+          ESP_LOGI(TAG, "LIS3DH : ax=%.3f ay=%.3f az=%.3f", accel_results_fifo[read_samples-1].ax, accel_results_fifo[read_samples-1].ay, accel_results_fifo[read_samples-1].az);
+          ESP_LOGI(TAG, "LIS3DH : ax=%.3f ay=%.3f az=%.3f", accel_results_fifo[0].ax, accel_results_fifo[0].ay, accel_results_fifo[0].az);
+        }else {
+          ESP_LOGW(TAG, "LIS3DH : No samples read from FIFO");
+        }*/
 static void lis3dh_sampler_task(void *pvParameters) {
     ESP_LOGI(TAG, "LIS3DH Sampler Task Started");
     static uint32_t sampler_overrun_count = 0;
+    uint8_t samples_read = 0;
+    int64_t t0;
+    int64_t t1;
+    int64_t t2;
+    int64_t total_us;
     while (1) {
-        if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
-            int64_t t0 = esp_timer_get_time();            
-            uint8_t samples_read = measureLIS3DH_FIFO(accel_results_fifo);
-            int64_t t1 = esp_timer_get_time();
-            if (samples_read > 0) {
-                // Downsample from 5kHz to 2kHz.
-                // In a 6.4ms window, we get 32 samples at 5kHz.
-                // To get a 2kHz rate, we need 6.4ms / (1/2000Hz) = 12.8 samples.
-                // We will pick 13 samples from the batch by taking every ~2.5th sample.
-                taskENTER_CRITICAL(&samplerMux);
-                for (int i = 0; i < 13; i++) {
-                    int sample_index = (int)(i * 2.5f);
-                    if (sample_index < samples_read) {
-                        accelX_ring[accelRingBufferIndex] = (int16_t)(accel_results_fifo[sample_index].ax * 1000);
-                        accelY_ring[accelRingBufferIndex] = (int16_t)(accel_results_fifo[sample_index].ay * 1000);
-                        accelZ_ring[accelRingBufferIndex] = (int16_t)(accel_results_fifo[sample_index].az * 1000);
-                        accelRingBufferIndex = (accelRingBufferIndex + 1) % RING_BUFFER_SIZE;
-                    }
-                }
-                taskEXIT_CRITICAL(&samplerMux);
+      if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
+        t0 = esp_timer_get_time();            
+        samples_read = measureLIS3DH_FIFO(accel_results_fifo);
+        t1 = esp_timer_get_time();
+        if (samples_read > 0) {
+          // Downsample from 5kHz to 2kHz.
+          // In a 6.4ms window, we get 32 samples at 5kHz.
+          // To get a 2kHz rate, we need 6.4ms / (1/2000Hz) = 12.8 samples.
+          // We will pick 13 samples from the batch by taking every ~2.5th sample.
+          taskENTER_CRITICAL(&samplerMux);
+          for (int i = 0; i < 13; i++) {
+            int sample_index = (int)(i * 2.5f);
+            if (sample_index < samples_read) {
+                accelX_ring[accelRingBufferIndex] = (int16_t)(accel_results_fifo[sample_index].ax * 1000);
+                accelY_ring[accelRingBufferIndex] = (int16_t)(accel_results_fifo[sample_index].ay * 1000);
+                accelZ_ring[accelRingBufferIndex] = (int16_t)(accel_results_fifo[sample_index].az * 1000);
+                accelRingBufferIndex = (accelRingBufferIndex + 1) % RING_BUFFER_SIZE;
             }
-            int64_t t2 = esp_timer_get_time();
-            int64_t total_us = t2 - t0;
-            if (total_us > 6400) {
-              sampler_overrun_count++;
-              ESP_LOGW(TAG, "LIS3DH Sampler overrun: %lld us (lis=%lld, crit=%lld) total_overruns=%u",
-                     total_us, (long long)(t1-t0), (long long)(t2-t1), sampler_overrun_count);
-            }
+          }
+          taskEXIT_CRITICAL(&samplerMux);
         }
+        samples_read = 0; // Reset for next iteration
+        t2 = esp_timer_get_time();
+        total_us = t2 - t0;
+        if (total_us > 6400) {
+          sampler_overrun_count++;
+          ESP_LOGW(TAG, "LIS3DH Sampler overrun: %lld us (lis=%lld, crit=%lld) total_overruns=%u",
+                 total_us, (long long)(t1-t0), (long long)(t2-t1), sampler_overrun_count);
+        }
+      }
     }
 }
 

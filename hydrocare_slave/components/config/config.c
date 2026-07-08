@@ -3,6 +3,9 @@
 
 // For Continuous ADC
 #include "esp_adc/adc_continuous.h"
+#include "freertos/idf_additions.h"
+#include "freertos/projdefs.h"
+#include "lis3dh_types.h"
 
 #define fw_version  "0.0.14"
 // Static handles for the ADC driver and calibration to encapsulate them within this file.
@@ -232,8 +235,12 @@ void initLIS3DH()
     lis3dh_set_scale(lis3dh_sensor, lis3dh_scale_2_g);
     // Set FIFO to stream mode. The watermark (thresh) is set to 0, which is not used in this configuration
     // as we will read all available samples in the sampler task.
-    lis3dh_set_fifo_mode(lis3dh_sensor, lis3dh_stream, 0, lis3dh_int1_signal);
+    lis3dh_set_fifo_mode(lis3dh_sensor, lis3dh_stream,32, lis3dh_int1_signal);
     lis3dh_set_mode(lis3dh_sensor, lis3dh_odr_5000, lis3dh_low_power, true, true, true);
+    //vTaskDelay(pdMS_TO_TICKS(10));
+    //lis3dh_float_data_t accel_results;
+    //lis3dh_get_float_data(lis3dh_sensor, &accel_results);
+    //ESP_LOGI(TAG, "LIS3DH initialized: ax=%.3f ay=%.3f az=%.3f", accel_results.ax, accel_results.ay, accel_results.az);
 }
 void initI2CBus(void) {
     i2c_master_bus_config_t bus_config = {
