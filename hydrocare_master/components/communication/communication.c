@@ -187,7 +187,7 @@ bool readSlaveData(SensorDataPacket* outPacket) {
     // ========== STEP 3: Set Lock ==========
     spiWrite(ADDR_CTRL, CTRL_LOCK_BUFFERS);
     if(debug_infos) ESP_LOGI(TAG, "write lock data trigger");
-    vTaskDelay(pdMS_TO_TICKS(5));
+    vTaskDelay(pdMS_TO_TICKS(20));
     // ========== STEP 4: Poll for LOCKED status ==========
     startTime = get_millis();
     bool locked = false;
@@ -212,7 +212,7 @@ bool readSlaveData(SensorDataPacket* outPacket) {
     if(debug_infos) ESP_LOGI(TAG, "Ready to process sensor data packet");
 
     // ========== STEP 6: Release Lock ==========
-    vTaskDelay(pdMS_TO_TICKS(10));
+    vTaskDelay(pdMS_TO_TICKS(20));
     spiWrite(ADDR_CTRL, CTRL_UNLOCK_BUFFERS);
     if(debug_infos) ESP_LOGI(TAG, "write unlock buffers command");
     vTaskDelay(pdMS_TO_TICKS(5));
