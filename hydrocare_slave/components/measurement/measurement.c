@@ -82,11 +82,10 @@ void get_ov2640_image(uint16_t* currentData)
   }
 }
 
-void measureBME680(bme680_values_float_t* bme680_results)
+void measureBME680(bme680_values_float_t* bme680_results,uint32_t* duration)
 {
-    uint32_t duration = bme680_get_measurement_duration(get_bme_dev_handle());
     if (bme680_force_measurement(get_bme_dev_handle())) {
-        vTaskDelay(duration);
+        vTaskDelay(*duration);
         bme680_get_results_float(get_bme_dev_handle(), bme680_results);
     }
 }

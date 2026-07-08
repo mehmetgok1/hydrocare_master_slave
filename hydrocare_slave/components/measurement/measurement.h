@@ -5,7 +5,7 @@
 #include "config.h"
 
 //bme680 calls
-void measureBME680(bme680_values_float_t* bme680_results);
+void measureBME680(bme680_values_float_t* bme680_results,uint32_t* duration);
 
 //ov2640 camera calls
 void get_ov2640_image(uint16_t* currentData);

@@ -213,13 +213,13 @@ static void bmeSamplerTask(void *pvParameters) {
   (void) pvParameters;
   TickType_t xLastWakeTime;
   const TickType_t xFrequency = pdMS_TO_TICKS(200);
-
+  uint32_t duration = bme680_get_measurement_duration(get_bme_dev_handle());
   xLastWakeTime = xTaskGetTickCount();
   while (1) {
     int write_idx = 1 - bme_write_idx;
     bme680_values_float_t sample = {0};
     int64_t t0 = esp_timer_get_time();
-    measureBME680(&sample);
+    measureBME680(&sample, &duration);
     int64_t t1 = esp_timer_get_time();
 
     taskENTER_CRITICAL(&bmeMux);
@@ -321,21 +321,21 @@ static void continuous_adc_task(void *pvParameters)
                 // Use the official parsing function to correctly interpret the ADC data
                 esp_err_t parse_ret = adc_continuous_parse_data(*get_adc_cont_handle(), result, ret_num, parsed_result, &parsed_num);
                 if (parse_ret == ESP_OK) {
-                    for (uint32_t i = 0; i < parsed_num; i+=2) { // We get 2 channels of data at a time
-                        if (parsed_result[i].valid) {
-                            // Downsample: 20kHz -> 2kHz means we take 1 of every 10 samples
-                            if (decimation_count++ % 10 == 0) {
-                                // Assuming channel 0 is Ambient Light and channel 1 is Microphone based on config
-                                ambLight_result = parsed_result[i].raw_data;
-                                if (i + 1 < parsed_num && parsed_result[i+1].valid) {
-                                    taskENTER_CRITICAL(&samplerMux);
-                                    microphone_ring[micRingBufferIndex] = parsed_result[i+1].raw_data;
-                                    micRingBufferIndex = (micRingBufferIndex + 1) % RING_BUFFER_SIZE;
-                                    taskEXIT_CRITICAL(&samplerMux);
-                                }
-                            }
+                  for (uint32_t i = 0; i < parsed_num; i+=2) { // We get 2 channels of data at a time
+                    if (parsed_result[i].valid) {
+                        // Downsample: 20kHz -> 2kHz means we take 1 of every 10 samples
+                      if (decimation_count++ % 10 == 0) {
+                        // Assuming channel 0 is Ambient Light and channel 1 is Microphone based on config
+                        ambLight_result = parsed_result[i].raw_data;
+                        if (i + 1 < parsed_num && parsed_result[i+1].valid) {
+                          taskENTER_CRITICAL(&samplerMux);
+                          microphone_ring[micRingBufferIndex] = parsed_result[i+1].raw_data;
+                          micRingBufferIndex = (micRingBufferIndex + 1) % RING_BUFFER_SIZE;
+                          taskEXIT_CRITICAL(&samplerMux);
                         }
+                      }
                     }
+                  }
                 }
             } else if (ret == ESP_ERR_TIMEOUT) {
                 break; // No more data to read
@@ -556,7 +556,7 @@ void startHighSpeedSamplerTask() {
     "HighSpeedSampler",
     8192,           // Increased stack for ADC parsing buffer
     NULL,           // Parameters
-    configMAX_PRIORITIES - 1, // Highest priority to ensure timely sampling and prevent overruns
+    1,              // Highest priority to ensure timely sampling and prevent overruns
     &samplerTaskHandle,
     0               // Core 0, same as the timer and other tasks for simplicity
   );
@@ -569,7 +569,7 @@ void startLis3dhSamplerTask() {
     "Lis3dhSampler",
     4096,
     NULL,
-    configMAX_PRIORITIES - 1, // Highest priority
+    1, // Highest priority
     &lis3dhSamplerTaskHandle,
     0);
   ESP_LOGI(TAG, "LIS3DH sampler task created on Core 0");
