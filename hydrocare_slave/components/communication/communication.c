@@ -134,7 +134,10 @@ void collectMeasurementData() {
   xSemaphoreTake(currentDataMutex, portMAX_DELAY);
 
   // 1. Ambient light (read from ring buffer, updated by ADC task)
-  currentData.ambientLight = ambLight_result;
+  // 1. Ambient light (Scale the raw value exactly once per packet)
+  float amb_voltage = (ambLight_result / 4095.0f) * VREF;
+  float amb_current_uA = (amb_voltage / R_LOAD) * 1e6f; 
+  currentData.ambientLight = (uint16_t)amb_current_uA;
 
   int64_t tAmbientEnd = esp_timer_get_time();
   int64_t tRingStart = esp_timer_get_time();
@@ -215,7 +218,7 @@ void collectMeasurementData() {
     ESP_LOGI(TAG, "Seq:%d MicIdx:%d AccelIdx:%d TxBufReady", sequenceNumber, micRingBufferIndex, accelRingBufferIndex);
 
   }else{
-    printf("%d", sequenceNumber);
+    printf("%d ", sequenceNumber);
   }
   // Buffer info
 }
@@ -335,13 +338,18 @@ static void continuous_adc_task(void *pvParameters)
                 if (parse_ret == ESP_OK) {
                   for (uint32_t i = 0; i < parsed_num; i+=2) { // We get 2 channels of data at a time
                     if (parsed_result[i].valid) {
-                        // Downsample: 20kHz -> 2kHz means we take 1 of every 10 samples
-                      if (decimation_count++ % 10 == 0) {
-                        // Assuming channel 0 is Ambient Light and channel 1 is Microphone based on config
+                      // Downsample: 20kHz -> 2kHz means we take 1 of every 10 samples
+                      if (decimation_count++ % 10 == 0) {                          
+                        // 1. Ambient Light (Keep it RAW here, it's faster!)
                         ambLight_result = parsed_result[i].raw_data;
+                        // 2. Microphone (Scale it here so we don't stall the SPI task later)
                         if (i + 1 < parsed_num && parsed_result[i+1].valid) {
+                          uint16_t raw_mic = parsed_result[i+1].raw_data;
+                          float mic_voltage = (raw_mic / 4095.0f) * VREF;
+                          uint16_t mic_mv = (uint16_t)(mic_voltage * 1000.0f); // Store in millivolts
+                          
                           taskENTER_CRITICAL(&samplerMux);
-                          microphone_ring[micRingBufferIndex] = parsed_result[i+1].raw_data;
+                          microphone_ring[micRingBufferIndex] = mic_mv;
                           micRingBufferIndex = (micRingBufferIndex + 1) % RING_BUFFER_SIZE;
                           taskEXIT_CRITICAL(&samplerMux);
                         }

@@ -314,7 +314,7 @@ void loop() {
       downsampleRGBFrame(slaveData.rgbFrame, downsampled16x16);
       memcpy(irFrame16x12, slaveData.irFrame, sizeof(irFrame16x12));
     }
-    notifyAll(master_batteryPercentage, master_ambLight, master_PIRValue, master_movingDist, master_ambLight, 
+    notifyAll(master_batteryPercentage, slaveData.ambientLight, master_PIRValue, master_movingDist, master_ambLight, 
               master_movingDist, master_movingEnergy, master_staticDist, master_staticEnergy, master_detectionDist,
               downsampled16x16, sizeof(downsampled16x16), 
               irFrame16x12, sizeof(irFrame16x12));
