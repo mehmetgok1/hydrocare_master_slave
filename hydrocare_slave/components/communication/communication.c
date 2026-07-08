@@ -155,6 +155,9 @@ void collectMeasurementData() {
   taskEXIT_CRITICAL(&samplerMux);
   int64_t tRingEnd = esp_timer_get_time();
   currentData.accelSampleCount = 400;  // Full 0.2 second of 2kHz data
+  currentData.accelX = currentData.accelX_samples[399];
+  currentData.accelY = currentData.accelY_samples[399];
+  currentData.accelZ = currentData.accelZ_samples[399];
   currentData.gyroX = 0;
   currentData.gyroY = 0;
   currentData.gyroZ = 0;
@@ -205,7 +208,12 @@ void collectMeasurementData() {
              (long long)((esp_timer_get_time() - tAmbientStart)));
     ESP_LOGI(TAG, "RGB[Fst:0x%04X Mid:0x%04X Last:0x%04X]", currentData.rgbFrame[0], currentData.rgbFrame[2047], currentData.rgbFrame[4095]);
     ESP_LOGI(TAG, "IR[Fst:0x%04X Mid:0x%04X Last:0x%04X]", currentData.irFrame[0], currentData.irFrame[96], currentData.irFrame[191]);
+    ESP_LOGI(TAG,"accelX[Fst:%d Mid:%d Last:%d] accelY[Fst:%d Mid:%d Last:%d] accelZ[Fst:%d Mid:%d Last:%d]",
+             currentData.accelX_samples[0], currentData.accelX_samples[199], currentData.accelX_samples[399],
+             currentData.accelY_samples[0], currentData.accelY_samples[199], currentData.accelY_samples[399],
+             currentData.accelZ_samples[0], currentData.accelZ_samples[199], currentData.accelZ_samples[399]);
     ESP_LOGI(TAG, "Seq:%d MicIdx:%d AccelIdx:%d TxBufReady", sequenceNumber, micRingBufferIndex, accelRingBufferIndex);
+
   }
   // Buffer info
 }
@@ -214,7 +222,7 @@ void collectMeasurementData() {
 static void bmeSamplerTask(void *pvParameters) {
   (void) pvParameters;
   TickType_t xLastWakeTime;
-  const TickType_t xFrequency = pdMS_TO_TICKS(200);
+  const TickType_t xFrequency = pdMS_TO_TICKS(800);
   uint32_t duration = bme680_get_measurement_duration(get_bme_dev_handle());
   xLastWakeTime = xTaskGetTickCount();
   while (1) {

@@ -147,10 +147,10 @@ void initBME680()
     };
     ESP_ERROR_CHECK(spi_bus_add_device(SPI3_HOST, &devcfg, &spi_bme_handle));
     bme680_sensor=bme680_init_sensor(1,  0, AQ_CS,&spi_bme_handle);
-    bme680_set_oversampling_rates(bme680_sensor, osr_4x, osr_2x, osr_2x);
-    bme680_set_filter_size(bme680_sensor, iir_size_7);
+    bme680_set_oversampling_rates(bme680_sensor, osr_1x, osr_1x, osr_1x);
+    bme680_set_filter_size(bme680_sensor, iir_size_0);
     bme680_set_heater_profile(bme680_sensor, 0, 320, 150);
-    bme680_use_heater_profile (bme680_sensor, 0);
+    bme680_use_heater_profile (bme680_sensor, BME680_HEATER_NOT_USED);
 }
 void initCamera()
 {

@@ -323,7 +323,7 @@ void loop() {
     if(debug_infos) {
         ESP_LOGI(TAG2, "[LOOP] Cycle: %llu ms (< 200 ms timer)", (esp_timer_get_time() - loopStart) / 1000);
         if (slaveDataValid) { // Add this guard to prevent dereferencing a NULL pointer
-            ESP_LOGI(TAG2, "[slaveData] accelX: %u | accelY: %u | accelZ: %u | temperature: %.1f | humdity: %.1f | ambienlight: %u | sequence: %u", 
+            ESP_LOGI(TAG2, "[slaveData] accelX: %d | accelY: %d | accelZ: %d | temperature: %.1f | humdity: %.1f | ambienlight: %u | sequence: %u", 
                     slaveData.accelX, slaveData.accelY, slaveData.accelZ, slaveData.temperature, slaveData.humidity, slaveData.ambientLight, slaveData.sequence);
         }
     }else {
