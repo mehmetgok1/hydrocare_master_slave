@@ -140,7 +140,7 @@ static uint8_t* spiReadBulk(uint8_t address, uint16_t numBytes) {
     spi_device_transmit(spi_handle, &t); 
     
     uint8_t statusByte = spiRxBuffer[1];
-    
+
     esp_rom_delay_us(50);
 
     if(debug_infos) {
@@ -157,12 +157,12 @@ static uint32_t get_millis(void) {
     return (uint32_t)(esp_timer_get_time() / 1000ULL);
 }
 
-SensorDataPacket* readSlaveData(void) {
+bool readSlaveData(SensorDataPacket* outPacket) {
     if (spiRxBuffer == NULL) {
         ESP_LOGE(TAG, "ERROR: SPI RX Buffer not allocated!");
-        return NULL;
+        return false;
     }
-
+    
     // ========== STEP 1: Set Trigger ==========
     spiWrite(ADDR_CTRL, CTRL_TRIGGER_MEASUREMENT);
     if(debug_infos) ESP_LOGI(TAG, "write trigger measurement command");
@@ -182,13 +182,12 @@ SensorDataPacket* readSlaveData(void) {
     }
     if (!measured) {
         ESP_LOGE(TAG, "Timeout waiting for STATUS_MEASURED");
-        return NULL;
+        return false;
     }
     // ========== STEP 3: Set Lock ==========
     spiWrite(ADDR_CTRL, CTRL_LOCK_BUFFERS);
     if(debug_infos) ESP_LOGI(TAG, "write lock data trigger");
-    vTaskDelay(pdMS_TO_TICKS(10));
-
+    vTaskDelay(pdMS_TO_TICKS(5));
     // ========== STEP 4: Poll for LOCKED status ==========
     startTime = get_millis();
     bool locked = false;
@@ -198,11 +197,13 @@ SensorDataPacket* readSlaveData(void) {
             locked = true;
             break;
         }
-        vTaskDelay(pdMS_TO_TICKS(5));
+        vTaskDelay(pdMS_TO_TICKS(10));
+        spiWrite(ADDR_CTRL, CTRL_LOCK_BUFFERS); // Re-assert lock in case it was lost
+        vTaskDelay(pdMS_TO_TICKS(10));
     }
     if (!locked) {
         ESP_LOGE(TAG, "Timeout waiting for STATUS_LOCKED");
-        return NULL;
+        return false;
     }
 
     // ========== STEP 5: Bulk Read Sensor Data ==========
@@ -216,14 +217,15 @@ SensorDataPacket* readSlaveData(void) {
     if(debug_infos) ESP_LOGI(TAG, "write unlock buffers command");
     vTaskDelay(pdMS_TO_TICKS(5));
 
-    SensorDataPacket *packet = (SensorDataPacket*)(payloadPtr);
-    
+    // Safely copy the data from the DMA buffer to the output structure
+    memcpy(outPacket, payloadPtr, sizeof(SensorDataPacket));
+
     if(debug_infos) {
         ESP_LOGI(TAG, "[Packet] Sequence: %u | Temp: %.1f C | Humidity: %.1f %% | Light: %u",
-                 packet->sequence, packet->temperature, packet->humidity, packet->ambientLight);
+                 outPacket->sequence, outPacket->temperature, outPacket->humidity, outPacket->ambientLight);
     }
     
-    return packet;
+    return true;
 }
 
 void sendIRLED(bool state) {

@@ -268,17 +268,21 @@ void loop() {
     }
     allocateSPIBuffer();
 
+    // This large ~24KB packet is declared static to allocate it in .bss once at compile-time,
+    // preventing repeated, costly stack allocations and reducing the risk of stack overflow.
+    static SensorDataPacket slaveData;
     // ==================== FETCH SLAVE DATA FIRST ====================
-    SensorDataPacket* slaveData = readSlaveData(); 
+    // Now a stack-allocated object, not a pointer
+    bool slaveDataValid = readSlaveData(&slaveData);
     
     // ==================== MEASURE MASTER SENSORS ====================
     measureBatteryLevel(&master_batteryLevel, &master_batteryPercentage);
     measureAmbLight(&master_ambLight);
     measurePIR(&master_PIRValue);
     measuremmWave(&master_movingDist, &master_movingEnergy, &master_staticDist, &master_staticEnergy, &master_detectionDist);
-    
+
     // ==================== COMBINE AND PUSH TO QUEUE ====================
-    if (slaveData != NULL) {
+    if (slaveDataValid) {
       
       CombinedDataPacket* currentPacket = NULL;
       
@@ -296,7 +300,7 @@ void loop() {
         currentPacket->staticEnergy = master_staticEnergy;
         currentPacket->detectionDist = master_detectionDist;
         
-        memcpy(&currentPacket->slaveData, slaveData, sizeof(SensorDataPacket));
+        memcpy(&currentPacket->slaveData, &slaveData, sizeof(SensorDataPacket));
         
         // Pass the filled pointer to the SD task
         xQueueSend(dataQueue, &currentPacket, 0);
@@ -306,25 +310,25 @@ void loop() {
     }
     
     // ==================== BLE NOTIFICATION PHASE ====================
-    if (slaveData != NULL) {
-      downsampleRGBFrame(slaveData->rgbFrame, downsampled16x16);
-      memcpy(irFrame16x12, slaveData->irFrame, sizeof(irFrame16x12));
+    if (slaveDataValid) {
+      downsampleRGBFrame(slaveData.rgbFrame, downsampled16x16);
+      memcpy(irFrame16x12, slaveData.irFrame, sizeof(irFrame16x12));
     }
     notifyAll(master_batteryPercentage, master_ambLight, master_PIRValue, master_movingDist, master_ambLight, 
               master_movingDist, master_movingEnergy, master_staticDist, master_staticEnergy, master_detectionDist,
               downsampled16x16, sizeof(downsampled16x16), 
               irFrame16x12, sizeof(irFrame16x12));
-    
+
     // Total loop execution time
     if(debug_infos) {
         ESP_LOGI(TAG2, "[LOOP] Cycle: %llu ms (< 200 ms timer)", (esp_timer_get_time() - loopStart) / 1000);
-        if (slaveData != NULL) { // Add this guard to prevent dereferencing a NULL pointer
+        if (slaveDataValid) { // Add this guard to prevent dereferencing a NULL pointer
             ESP_LOGI(TAG2, "[slaveData] accelX: %u | accelY: %u | accelZ: %u | temperature: %.1f | humdity: %.1f | ambienlight: %u | sequence: %u", 
-                    slaveData->accelX, slaveData->accelY, slaveData->accelZ, slaveData->temperature, slaveData->humidity, slaveData->ambientLight, slaveData->sequence);
+                    slaveData.accelX, slaveData.accelY, slaveData.accelZ, slaveData.temperature, slaveData.humidity, slaveData.ambientLight, slaveData.sequence);
         }
     }else {
-        if (slaveData != NULL) {
-            printf("%d ", slaveData->sequence);
+        if (slaveDataValid) {
+            printf("%d ", slaveData.sequence);
         }
     }
     timerStream = 0;

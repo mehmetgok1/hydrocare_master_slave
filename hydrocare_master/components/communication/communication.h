@@ -85,7 +85,7 @@ typedef struct {
 void initSPIComm();
 uint8_t spiRead(uint8_t address);
 void spiWrite(uint8_t address, uint8_t data);
-SensorDataPacket* readSlaveData();
+bool readSlaveData(SensorDataPacket* outPacket);
 void sendIRLED(bool state);
 void sendBrightness(uint8_t brightness);
 void allocateSPIBuffer();

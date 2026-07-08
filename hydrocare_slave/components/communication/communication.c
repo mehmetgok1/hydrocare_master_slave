@@ -141,15 +141,13 @@ void collectMeasurementData() {
   // --- Critical section to copy from ring buffers ---
   taskENTER_CRITICAL(&samplerMux);
   int micEndIdx = micRingBufferIndex;
-  int accelEndIdx = accelRingBufferIndex;
   int micStartIdx = (micEndIdx - 400 + RING_BUFFER_SIZE) % RING_BUFFER_SIZE;
-  int accelStartIdx = (accelEndIdx - 400 + RING_BUFFER_SIZE) % RING_BUFFER_SIZE;
   for (int i = 0; i < 400; i++) {
     int micSrcIdx = (micStartIdx + i) % RING_BUFFER_SIZE;
-    int accelSrcIdx = (accelStartIdx + i) % RING_BUFFER_SIZE;
-    currentData.accelX_samples[i] = accelX_ring[accelSrcIdx];
-    currentData.accelY_samples[i] = accelY_ring[accelSrcIdx];
-    currentData.accelZ_samples[i] = accelZ_ring[accelSrcIdx];
+    // Provide constant data for accelerometer to test for bottlenecks
+    currentData.accelX_samples[i] = 1234;
+    currentData.accelY_samples[i] = 1234;
+    currentData.accelZ_samples[i] = 1234;
     currentData.microphoneSamples[i] = microphone_ring[micSrcIdx];
   }
   taskEXIT_CRITICAL(&samplerMux);
@@ -214,7 +212,7 @@ void collectMeasurementData() {
 static void bmeSamplerTask(void *pvParameters) {
   (void) pvParameters;
   TickType_t xLastWakeTime;
-  const TickType_t xFrequency = pdMS_TO_TICKS(100);
+  const TickType_t xFrequency = pdMS_TO_TICKS(200);
 
   xLastWakeTime = xTaskGetTickCount();
   while (1) {
