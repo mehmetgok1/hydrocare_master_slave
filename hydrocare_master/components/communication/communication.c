@@ -90,7 +90,7 @@ uint8_t spiRead(uint8_t address) {
     // polling_transmit blocks until done, keeps transaction tight
     spi_device_polling_transmit(spi_handle, &t);
     
-    esp_rom_delay_us(50); // Mimic your Arduino delay between transactions
+    esp_rom_delay_us(150); // Mimic your Arduino delay between transactions
     
     return rx_data[1]; // Return the slave's DATA/STATUS byte
 }
@@ -113,7 +113,7 @@ void spiWrite(uint8_t address, uint8_t data) {
 
     spi_device_polling_transmit(spi_handle, &t);
     
-    esp_rom_delay_us(50);
+    esp_rom_delay_us(150);
 }
 
 static uint8_t* spiReadBulk(uint8_t address, uint16_t numBytes) {
@@ -166,7 +166,9 @@ bool readSlaveData(SensorDataPacket* outPacket) {
     // ========== STEP 1: Set Trigger ==========
     spiWrite(ADDR_CTRL, CTRL_TRIGGER_MEASUREMENT);
     if(debug_infos) ESP_LOGI(TAG, "write trigger measurement command");
-    vTaskDelay(pdMS_TO_TICKS(10)); // Replaces Arduino delay()
+    
+    // Give the slave time to process the trigger and clear its old status byte
+    vTaskDelay(pdMS_TO_TICKS(30)); 
 
     // ========== STEP 2: Poll for MEASURED status ==========
     uint32_t startTime = get_millis();
@@ -174,7 +176,7 @@ bool readSlaveData(SensorDataPacket* outPacket) {
     bool measured = false;
     while (get_millis() - startTime < 2000) {
         status = spiRead(ADDR_STATUS);
-        if ( status == STATUS_MEASURED) {
+        if (status == STATUS_MEASURED) {
             measured = true;
             break;
         }
@@ -184,10 +186,14 @@ bool readSlaveData(SensorDataPacket* outPacket) {
         ESP_LOGE(TAG, "Timeout waiting for STATUS_MEASURED");
         return false;
     }
+
     // ========== STEP 3: Set Lock ==========
     spiWrite(ADDR_CTRL, CTRL_LOCK_BUFFERS);
     if(debug_infos) ESP_LOGI(TAG, "write lock data trigger");
-    vTaskDelay(pdMS_TO_TICKS(20));
+    
+    // Give the slave time to mount the 11.8 KB DMA buffer
+    vTaskDelay(pdMS_TO_TICKS(30));
+
     // ========== STEP 4: Poll for LOCKED status ==========
     startTime = get_millis();
     bool locked = false;
@@ -198,16 +204,14 @@ bool readSlaveData(SensorDataPacket* outPacket) {
             break;
         }
         vTaskDelay(pdMS_TO_TICKS(10));
-        spiWrite(ADDR_CTRL, CTRL_LOCK_BUFFERS); // Re-assert lock in case it was lost
-        vTaskDelay(pdMS_TO_TICKS(10));
+        // DO NOT re-send the lock command here.
     }
     if (!locked) {
         ESP_LOGE(TAG, "Timeout waiting for STATUS_LOCKED");
         return false;
     }
-        //10207
+    
     // ========== STEP 5: Bulk Read Sensor Data ==========
-    // The function now returns a pointer to the payload inside the DMA buffer.
     uint8_t* payloadPtr = spiReadBulk(ADDR_SENSOR_DATA, sizeof(SensorDataPacket));
     if(debug_infos) ESP_LOGI(TAG, "Ready to process sensor data packet");
 

@@ -562,11 +562,11 @@ void startSpiCommandHandlerTask() {
         "SpiCmdHandler",
         4096,
         NULL,
-        3, // High priority to quickly handle SPI commands
+        4, // High priority to quickly handle SPI commands
         &spiCommandHandlerTaskHandle,
-        0 // Core 0 for general tasks
+        1 // Core 1 for general tasks
     );
-    ESP_LOGI(TAG, "SPI command handler task created on Core 0");
+    ESP_LOGI(TAG, "SPI command handler task created on Core 1");
 }
 
 // Start the background measurement task (call from main setup)
@@ -590,7 +590,7 @@ void startHighSpeedSamplerTask() {
     "HighSpeedSampler",
     8192,           // Increased stack for ADC parsing buffer
     NULL,           // Parameters
-    1,              // Highest priority to ensure timely sampling and prevent overruns
+    4,              // Highest priority to ensure timely sampling and prevent overruns
     &samplerTaskHandle,
     0               // Core 0, same as the timer and other tasks for simplicity
   );
@@ -603,7 +603,7 @@ void startLis3dhSamplerTask() {
     "Lis3dhSampler",
     4096,
     NULL,
-    1, // Highest priority
+    5, // Highest priority
     &lis3dhSamplerTaskHandle,
     0);
   ESP_LOGI(TAG, "LIS3DH sampler task created on Core 0");
@@ -617,7 +617,7 @@ void initIRSamplerTask() {
       "IRSampler",
       4096,          // Stack size
       NULL,
-      1,
+      2,
       &irTaskHandle,
       0);
     ESP_LOGI(TAG, "IR sampler task started on Core 0");
