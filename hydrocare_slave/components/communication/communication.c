@@ -300,6 +300,8 @@ static void continuous_adc_task(void *pvParameters)
     esp_err_t ret;
     uint32_t ret_num = 0;
     uint8_t result[EXAMPLE_READ_LEN] = {0};
+    adc_continuous_data_t parsed_result[256]; // Buffer to hold parsed ADC data
+    int decimation_count = 0;
 
     s_task_handle = xTaskGetCurrentTaskHandle();
 
@@ -315,19 +317,24 @@ static void continuous_adc_task(void *pvParameters)
         while (1) {
             ret = adc_continuous_read(*get_adc_cont_handle(), result, EXAMPLE_READ_LEN, &ret_num, 0);
             if (ret == ESP_OK) {
-                for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_RESULT_BYTES * 2) {
-                    adc_digi_output_data_t *p = (adc_digi_output_data_t*)&result[i];
-                    // We have two channels, so we get two results one after another
-                    uint16_t ch0_val = p[0].val; // Assuming Ambient Light
-                    uint16_t ch1_val = p[1].val; // Assuming Microphone
-                    // Downsample: 20kHz -> 2kHz means we take 1 of every 10 samples
-                    // The loop already iterates through all samples, we just need to decimate.
-                    if ((i / (SOC_ADC_DIGI_RESULT_BYTES * 2)) % 10 == 0) {
-                        taskENTER_CRITICAL(&samplerMux);
-                        microphone_ring[micRingBufferIndex] = ch1_val;
-                        ambLight_result = ch0_val; // Update ambient light with the latest value
-                        micRingBufferIndex = (micRingBufferIndex + 1) % RING_BUFFER_SIZE;
-                        taskEXIT_CRITICAL(&samplerMux);
+                uint32_t parsed_num = 0;
+                // Use the official parsing function to correctly interpret the ADC data
+                esp_err_t parse_ret = adc_continuous_parse_data(*get_adc_cont_handle(), result, ret_num, parsed_result, &parsed_num);
+                if (parse_ret == ESP_OK) {
+                    for (uint32_t i = 0; i < parsed_num; i+=2) { // We get 2 channels of data at a time
+                        if (parsed_result[i].valid) {
+                            // Downsample: 20kHz -> 2kHz means we take 1 of every 10 samples
+                            if (decimation_count++ % 10 == 0) {
+                                // Assuming channel 0 is Ambient Light and channel 1 is Microphone based on config
+                                ambLight_result = parsed_result[i].raw_data;
+                                if (i + 1 < parsed_num && parsed_result[i+1].valid) {
+                                    taskENTER_CRITICAL(&samplerMux);
+                                    microphone_ring[micRingBufferIndex] = parsed_result[i+1].raw_data;
+                                    micRingBufferIndex = (micRingBufferIndex + 1) % RING_BUFFER_SIZE;
+                                    taskEXIT_CRITICAL(&samplerMux);
+                                }
+                            }
+                        }
                     }
                 }
             } else if (ret == ESP_ERR_TIMEOUT) {
@@ -547,7 +554,7 @@ void startHighSpeedSamplerTask() {
   xTaskCreatePinnedToCore(
     continuous_adc_task,
     "HighSpeedSampler",
-    4096,
+    8192,           // Increased stack for ADC parsing buffer
     NULL,           // Parameters
     configMAX_PRIORITIES - 1, // Highest priority to ensure timely sampling and prevent overruns
     &samplerTaskHandle,
