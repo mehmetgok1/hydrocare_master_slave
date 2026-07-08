@@ -20,6 +20,10 @@
 #include "MLX90641_API.h"
 #include "MLX90641_I2C_Driver.h"
 #include "freertos/semphr.h"
+#include "MLX90641_API.h"
+#include "esp_attr.h"
+#include "lis3dh.h"
+#include "lis3dh_types.h"
 
 //initialization functions
 void initPeripherals();
@@ -27,14 +31,8 @@ void initPeripherals();
 /*GETTER FUNCTIONS BELOW*/
 
 // Getter functions for ADC handles and calibration status
-adc_oneshot_unit_handle_t get_adc1_handle(void);
-adc_continuous_handle_t get_adc_cont_handle(void);
-SemaphoreHandle_t get_adc_mutex(void);
-adc_cali_handle_t get_adc1_cali_handle_chan0(void);
-adc_cali_handle_t get_adc1_cali_handle_chan1(void);
-bool is_adc_cali_enabled_chan0(void);
-bool is_adc_cali_enabled_chan1(void);
-
+adc_continuous_handle_t* get_adc_cont_handle(void);
+SemaphoreHandle_t* get_adc_semaphore(void);
 //getter functions for BME680 handles
 bme680_sensor_t* get_bme_dev_handle(void);
 
@@ -60,6 +58,13 @@ paramsMLX90641* get_mlx90641_params(void);
 #define LEDC_DUTY               (512) // Set duty to 50%. (2 ** 10) * 50% = 512
 #define LEDC_CLK_SRC            LEDC_AUTO_CLK
 #define LEDC_FREQUENCY          (4000) // Frequency in Hertz. Set frequency at 4 kHz
+
+//adc 
+#define EXAMPLE_READ_LEN                    256
+#define EXAMPLE_ADC_UNIT                    ADC_UNIT_1
+#define EXAMPLE_ADC_CONV_MODE               ADC_CONV_SINGLE_UNIT_1
+#define EXAMPLE_ADC_ATTEN                   ADC_ATTEN_DB_12
+#define EXAMPLE_ADC_BIT_WIDTH               SOC_ADC_DIGI_MAX_BITWIDTH
 
 //GPIO pin definitions
 #define AmbLight    1

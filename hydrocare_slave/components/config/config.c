@@ -1,21 +1,14 @@
 #include "config.h"
-#include "MLX90641_API.h"
-#include "esp_attr.h"
-#include "lis3dh.h"
-#include "lis3dh_types.h"
+
 
 // For Continuous ADC
 #include "esp_adc/adc_continuous.h"
 
 #define fw_version  "0.0.14"
 // Static handles for the ADC driver and calibration to encapsulate them within this file.
-static adc_oneshot_unit_handle_t adc1_handle;
+
 static adc_continuous_handle_t adc_cont_handle = NULL;
-static SemaphoreHandle_t adc_mutex = NULL;
-static adc_cali_handle_t adc1_cali_handle_chan0 = NULL;
-static adc_cali_handle_t adc1_cali_handle_chan1 = NULL;
-static bool adc_cali_enabled_chan0 = false;
-static bool adc_cali_enabled_chan1 = false;
+
 
 // spi for slave to peripheral communication
 spi_device_handle_t spi_bme_handle;
@@ -39,8 +32,10 @@ void initLIS3DH();
 void initI2CBus();
 void initIRTemp();
 
+
 static paramsMLX90641 mlx90641_params;
 static const char *TAG = "config";
+static SemaphoreHandle_t adc_semaphore = NULL;
 
 void initPeripherals()
 {
@@ -89,83 +84,40 @@ void initPins()
 
     ESP_LOGI(TAG, "GPIO pins initialized using gpio_config()");
 }
-static bool adc_calibration_init(adc_unit_t unit, adc_channel_t channel, adc_atten_t atten, adc_cali_handle_t *out_handle)
-{
-    adc_cali_handle_t handle = NULL;
-    esp_err_t ret = ESP_FAIL;
-    bool calibrated = false;
-    if (!calibrated) {
-        ESP_LOGI(TAG, "calibration scheme version is %s", "Curve Fitting");
-        adc_cali_curve_fitting_config_t cali_config = {
-            .unit_id = unit,
-            .chan = channel,
-            .atten = atten,
-            .bitwidth = ADC_BITWIDTH_DEFAULT,
-        };
-        ret = adc_cali_create_scheme_curve_fitting(&cali_config, &handle);
-        if (ret == ESP_OK) {
-            calibrated = true;
-        }
-    }
-    *out_handle = handle;
-    return calibrated;
-}
 void init_adc_peripheral()
 {
-    adc_mutex = xSemaphoreCreateMutex();
-    if (!adc_mutex) {
-        ESP_LOGE(TAG, "Failed to create ADC mutex");
-        while (1) vTaskDelay(pdMS_TO_TICKS(1000));
+    adc_semaphore = xSemaphoreCreateBinary();
+    if (adc_semaphore == NULL) {
+        ESP_LOGE(TAG, "Failed to create semaphore!");
+        return;
     }
-
-    // ===== Initialize ADC1 for One-Shot Mode =====
-    // This handle will now only be used for the ambient light sensor
-    adc_oneshot_unit_init_cfg_t init_config1 = {
-        .unit_id = ADC_UNIT_1,
-        .ulp_mode = ADC_ULP_MODE_DISABLE,
-    };
-    ESP_ERROR_CHECK(adc_oneshot_new_unit(&init_config1, &adc1_handle));
-
-    // ===== Configure ADC Channels =====
-    // Configure Ambient Light channel (ADC1_CH0) for one-shot mode
-    adc_oneshot_chan_cfg_t config_ch0 = {
-        .bitwidth = ADC_BITWIDTH_12,
-        .atten = ADC_ATTEN_DB_12,
-    };
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_0, &config_ch0));
-
-    // ===== Initialize ADC1 for Continuous (DMA) Mode for Microphone =====
+    static adc_channel_t channel[2] = {ADC_CHANNEL_0, ADC_CHANNEL_1};
     adc_continuous_handle_cfg_t adc_config = {
         .max_store_buf_size = 1024,
-        .conv_frame_size = 256, // Should be a multiple of SOC_ADC_DIGI_DATA_BYTES_PER_CONV (4)
+        .conv_frame_size = EXAMPLE_READ_LEN,
     };
     ESP_ERROR_CHECK(adc_continuous_new_handle(&adc_config, &adc_cont_handle));
 
-    // Configure Microphone (ADC1_CH1) and Ambient Light (ADC1_CH0) for continuous mode
-    adc_digi_pattern_config_t adc_pattern_config[2] = {
-        {
-            .atten = ADC_ATTEN_DB_12, .channel = ADC_CHANNEL_0, .unit = ADC_UNIT_1, .bit_width = ADC_BITWIDTH_12, // Ambient Light
-        },
-        {
-            .atten = ADC_ATTEN_DB_12, .channel = ADC_CHANNEL_1, .unit = ADC_UNIT_1, .bit_width = ADC_BITWIDTH_12, // Microphone
-        }
-    };
     adc_continuous_config_t dig_cfg = {
-        .sample_freq_hz = 20 * 1000, // Sample faster than we need
-        .conv_mode = ADC_CONV_SINGLE_UNIT_1,
-        .format = ADC_DIGI_OUTPUT_FORMAT_TYPE2,
-        .pattern_num = 2,
-        .adc_pattern = adc_pattern_config,
+        .sample_freq_hz = 20 * 1000,
+        .conv_mode = EXAMPLE_ADC_CONV_MODE,
     };
+
+    adc_digi_pattern_config_t adc_pattern[SOC_ADC_PATT_LEN_MAX] = {0};
+    dig_cfg.pattern_num = 2;
+    for (int i = 0; i < 2; i++) {
+        adc_pattern[i].atten = EXAMPLE_ADC_ATTEN;
+        adc_pattern[i].channel = channel[i] & 0x7;
+        adc_pattern[i].unit = EXAMPLE_ADC_UNIT;
+        adc_pattern[i].bit_width = EXAMPLE_ADC_BIT_WIDTH;
+
+        ESP_LOGI(TAG, "adc_pattern[%d].atten is :%"PRIx8, i, adc_pattern[i].atten);
+        ESP_LOGI(TAG, "adc_pattern[%d].channel is :%"PRIx8, i, adc_pattern[i].channel);
+        ESP_LOGI(TAG, "adc_pattern[%d].unit is :%"PRIx8, i, adc_pattern[i].unit);
+    }
+    dig_cfg.adc_pattern = adc_pattern;
     ESP_ERROR_CHECK(adc_continuous_config(adc_cont_handle, &dig_cfg));
-
-    // ===== Initialize ADC Calibration =====
-    adc_cali_enabled_chan0 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_0, ADC_ATTEN_DB_12, &adc1_cali_handle_chan0);
-    adc_cali_enabled_chan1 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_1, ADC_ATTEN_DB_12, &adc1_cali_handle_chan1);
-
-    // Start the continuous ADC
-    ESP_ERROR_CHECK(adc_continuous_start(adc_cont_handle));
-    ESP_LOGI(TAG, "Continuous ADC for microphone started.");
+    
 }
 void init_spi_peripheral()
 {
@@ -270,14 +222,15 @@ void initLIS3DH()
         .queue_size = 1,
     };
     ESP_ERROR_CHECK(spi_bus_add_device(SPI3_HOST, &devcfg, &spi_lis3dh_handle));
-    lis3dh_sensor=lis3dh_init_sensor(1,  0, Acc_CS,&spi_lis3dh_handle);
-    lis3dh_config_hpf (lis3dh_sensor, lis3dh_hpf_normal, 0, false, false, false, false);    lis3dh_get_hpf_ref (lis3dh_sensor);
+    lis3dh_sensor = lis3dh_init_sensor(1, 0, Acc_CS, &spi_lis3dh_handle);
+    lis3dh_config_hpf(lis3dh_sensor, lis3dh_hpf_normal, 0, false, false, false, false);
+    lis3dh_get_hpf_ref(lis3dh_sensor);
     // enable ADC inputs and temperature sensor for ADC input 3
-    lis3dh_enable_adc (lis3dh_sensor, true, true);
+    lis3dh_enable_adc(lis3dh_sensor, true, true);
+
     // LAST STEP: Finally set scale and mode to start measurements
     lis3dh_set_scale(lis3dh_sensor, lis3dh_scale_2_g);
-    lis3dh_set_mode (lis3dh_sensor, lis3dh_odr_5000, lis3dh_low_power, true, true, true);
-
+    lis3dh_set_mode(lis3dh_sensor, lis3dh_odr_5000, lis3dh_low_power, true, true, true);
 }
 void initI2CBus(void) {
     i2c_master_bus_config_t bus_config = {
@@ -337,38 +290,12 @@ bme680_sensor_t* get_bme_dev_handle(void)
 {
     return bme680_sensor;
 }
-
-adc_oneshot_unit_handle_t get_adc1_handle(void)
+SemaphoreHandle_t* get_adc_semaphore(void)
 {
-    return adc1_handle;
+    return &adc_semaphore;
 }
 
-adc_continuous_handle_t get_adc_cont_handle(void)
+adc_continuous_handle_t* get_adc_cont_handle(void)
 {
-    return adc_cont_handle;
-}
-
-SemaphoreHandle_t get_adc_mutex(void)
-{
-    return adc_mutex;
-}
-
-adc_cali_handle_t get_adc1_cali_handle_chan0(void)
-{
-    return adc1_cali_handle_chan0;
-}
-
-adc_cali_handle_t get_adc1_cali_handle_chan1(void)
-{
-    return adc1_cali_handle_chan1;
-}
-// Add these getters:
-bool is_adc_cali_enabled_chan0(void)
-{
-    return adc_cali_enabled_chan0;
-}
-
-bool is_adc_cali_enabled_chan1(void)
-{
-    return adc_cali_enabled_chan1;
+    return &adc_cont_handle;
 }

@@ -77,4 +77,5 @@ void startHighSpeedSamplerTask();     // Start 2kHz accel+mic sampler task
 void setup_timer();                    // Setup timer for periodic tasks
 void initIRSamplerTask();               // Start background IR sampler task
 void initBMESamplerTask();
+void startLis3dhSamplerTask();
 #endif

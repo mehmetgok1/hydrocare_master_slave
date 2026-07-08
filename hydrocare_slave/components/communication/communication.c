@@ -13,16 +13,14 @@ static SensorDataPacket currentData = {0};
 static int16_t accelX_ring[RING_BUFFER_SIZE] = {0};
 static int16_t accelY_ring[RING_BUFFER_SIZE] = {0};
 static int16_t accelZ_ring[RING_BUFFER_SIZE] = {0};
-static uint16_t microphone_ring[RING_BUFFER_SIZE] = {0};
-volatile int ringBufferIndex = 0;  // Index for next write (no mutex needed - single writer)
+volatile int accelRingBufferIndex = 0;
 
+static uint16_t microphone_ring[RING_BUFFER_SIZE] = {0};
+volatile int micRingBufferIndex = 0;
 
 static uint16_t sequenceNumber = 0;
 static lis3dh_float_data_t accel_results={0};
-static uint16_t mic_result=0;
 static uint16_t ambLight_result=0;
-static float mlx90641Frame[192] = {0};
-static float Tamb = 0;
 // Double-buffer for IR frame sampling (background task writes, collector reads)
 static float mlx_frame_buf[2][192] = { {0} };
 static float mlx_frame_temp[2] = {0, 0};
@@ -44,8 +42,10 @@ static portMUX_TYPE samplerMux = portMUX_INITIALIZER_UNLOCKED;
 static TaskHandle_t measurementTaskHandle = NULL;
 static TaskHandle_t spiCommandHandlerTaskHandle = NULL;
 static TaskHandle_t samplerTaskHandle = NULL;
+static TaskHandle_t lis3dhSamplerTaskHandle = NULL;
 static TaskHandle_t irTaskHandle = NULL;
 static TaskHandle_t bmeTaskHandle = NULL;
+static TaskHandle_t s_task_handle = NULL;
 
 // Event group bits
 #define EVENT_TRIGGER_RECEIVED (1 << 0)    // Trigger command received
@@ -132,30 +132,29 @@ void collectMeasurementData() {
   int64_t tAmbientStart = esp_timer_get_time();
   // Acquire mutex before modifying currentData
   xSemaphoreTake(currentDataMutex, portMAX_DELAY);
-  // 1. Ambient light (fast, ~1ms)
-  if(!measureAmbLight(&ambLight_result)) {
-    ESP_LOGE(TAG, "Failed to measure ambient light!");
-  }else {
-    currentData.ambientLight = ambLight_result;
-  }
+
+  // 1. Ambient light (read from ring buffer, updated by ADC task)
+  currentData.ambientLight = ambLight_result;
+
   int64_t tAmbientEnd = esp_timer_get_time();
   int64_t tRingStart = esp_timer_get_time();
+  // --- Critical section to copy from ring buffers ---
   taskENTER_CRITICAL(&samplerMux);
-  int endIdx = ringBufferIndex;
-  int startIdx = (endIdx - 400 + RING_BUFFER_SIZE) % RING_BUFFER_SIZE;
+  int micEndIdx = micRingBufferIndex;
+  int accelEndIdx = accelRingBufferIndex;
+  int micStartIdx = (micEndIdx - 400 + RING_BUFFER_SIZE) % RING_BUFFER_SIZE;
+  int accelStartIdx = (accelEndIdx - 400 + RING_BUFFER_SIZE) % RING_BUFFER_SIZE;
   for (int i = 0; i < 400; i++) {
-    int srcIdx = (startIdx + i) % RING_BUFFER_SIZE;
-    currentData.accelX_samples[i] = accelX_ring[srcIdx];
-    currentData.accelY_samples[i] = accelY_ring[srcIdx];
-    currentData.accelZ_samples[i] = accelZ_ring[srcIdx];
-    currentData.microphoneSamples[i] = microphone_ring[srcIdx];
+    int micSrcIdx = (micStartIdx + i) % RING_BUFFER_SIZE;
+    int accelSrcIdx = (accelStartIdx + i) % RING_BUFFER_SIZE;
+    currentData.accelX_samples[i] = accelX_ring[accelSrcIdx];
+    currentData.accelY_samples[i] = accelY_ring[accelSrcIdx];
+    currentData.accelZ_samples[i] = accelZ_ring[accelSrcIdx];
+    currentData.microphoneSamples[i] = microphone_ring[micSrcIdx];
   }
   taskEXIT_CRITICAL(&samplerMux);
   int64_t tRingEnd = esp_timer_get_time();
   currentData.accelSampleCount = 400;  // Full 0.2 second of 2kHz data
-  currentData.accelX = accelX_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
-  currentData.accelY = accelY_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
-  currentData.accelZ = accelZ_ring[endIdx > 0 ? endIdx - 1 : RING_BUFFER_SIZE - 1];
   currentData.gyroX = 0;
   currentData.gyroY = 0;
   currentData.gyroZ = 0;
@@ -204,9 +203,9 @@ void collectMeasurementData() {
              (long long)(tBmeEnd - tBmeStart),
              (long long)(tRgbEnd - tRgbStart),
              (long long)((esp_timer_get_time() - tAmbientStart)));
-    ESP_LOGI(TAG, "RGB[Fst:0x%04X Mid:0x%04X Last:0x%04X]", currentData.rgbFrame[0], currentData.rgbFrame[2048], currentData.rgbFrame[4095]);
+    ESP_LOGI(TAG, "RGB[Fst:0x%04X Mid:0x%04X Last:0x%04X]", currentData.rgbFrame[0], currentData.rgbFrame[2047], currentData.rgbFrame[4095]);
     ESP_LOGI(TAG, "IR[Fst:0x%04X Mid:0x%04X Last:0x%04X]", currentData.irFrame[0], currentData.irFrame[96], currentData.irFrame[191]);
-    ESP_LOGI(TAG, "Seq:%d RingBufIdx:%d TxBufReady", sequenceNumber, ringBufferIndex);
+    ESP_LOGI(TAG, "Seq:%d MicIdx:%d AccelIdx:%d TxBufReady", sequenceNumber, micRingBufferIndex, accelRingBufferIndex);
   }
   // Buffer info
 }
@@ -262,41 +261,6 @@ static void measurementCollectorTask(void *pvParameters) {
   }
 }
 
-// ============ High-Speed Sampler (Callback + Task) for 2kHz Sampling ============
-
-// ISR triggered by hardware timer
-static void IRAM_ATTR timer_callback(void *arg) {
-  if (!samplerTaskHandle) {
-    return;
-  }
-    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    vTaskNotifyGiveFromISR(samplerTaskHandle, &xHigherPriorityTaskWoken);
-    // If a higher-priority task was unblocked, request a context switch.
-    if (xHigherPriorityTaskWoken) {
-        portYIELD_FROM_ISR();
-    }
-}
-
-void setup_timer() {
-    const esp_timer_create_args_t timer_args = {
-        .callback = &timer_callback,
-        .name = "sampler_timer"
-    };
-
-    esp_timer_handle_t timer_handle;
-  esp_err_t ret = esp_timer_create(&timer_args, &timer_handle);
-  if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to create sampler timer: %s", esp_err_to_name(ret));
-    while (1) vTaskDelay(pdMS_TO_TICKS(1000));
-  }
-    // Start the timer to trigger every 500 microseconds
-  ret = esp_timer_start_periodic(timer_handle, 500);
-  if (ret != ESP_OK) {
-    ESP_LOGE(TAG, "Failed to start sampler timer: %s", esp_err_to_name(ret));
-    while (1) vTaskDelay(pdMS_TO_TICKS(1000));
-  }
-}
-
 // ============ IR Sampler Task (double-buffered, runs every 100ms) ============
 static void irSamplerTask(void *pvParameters) {
   (void) pvParameters;
@@ -324,41 +288,117 @@ static void irSamplerTask(void *pvParameters) {
   }
 }
 
+static bool IRAM_ATTR s_conv_done_cb(adc_continuous_handle_t handle, const adc_continuous_evt_data_t *edata, void *user_data)
+{
+    BaseType_t mustYield = pdFALSE;
+    //Notify that ADC continuous driver has done enough number of conversions
+    vTaskNotifyGiveFromISR(s_task_handle, &mustYield);
 
-static void highSpeedSamplerTask(void *pvParameters) {
-    ESP_LOGI(TAG, "HighSpeedSampler Task Started");
-    static uint32_t sampler_overrun_count = 0;
-    while (1) {
-        if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
-            /* Fine-grained timing to isolate which stage causes overruns */
-            int64_t t0 = esp_timer_get_time();
-            measureMicrophone(&mic_result);
-            int64_t t1 = esp_timer_get_time();
-            measureLIS3DH(&accel_results);
-            int64_t t2 = esp_timer_get_time();
-            taskENTER_CRITICAL(&samplerMux);
-            int idx = ringBufferIndex;
-            accelX_ring[idx] = (int16_t)(accel_results.ax * 1000);
-            accelY_ring[idx] = (int16_t)(accel_results.ay * 1000);
-            accelZ_ring[idx] = (int16_t)(accel_results.az * 1000);
-            microphone_ring[idx] = mic_result;
-            ringBufferIndex = (ringBufferIndex + 1) % RING_BUFFER_SIZE;
-            taskEXIT_CRITICAL(&samplerMux);
-            int64_t t3 = esp_timer_get_time();
-            int64_t mic_us = t1 - t0;
-            int64_t lis_us = t2 - t1;
-            int64_t crit_us = t3 - t2;
-            int64_t total_us = t3 - t0;
-            if (total_us > 500) {
-              sampler_overrun_count++;
-              if (debug_code || (sampler_overrun_count % 50 == 0)) {
-                ESP_LOGW(TAG, "HighSpeedSampler overrun: %lld us (mic=%lld, lis=%lld, crit=%lld) total_overruns=%u",
-                     total_us, mic_us, lis_us, crit_us, sampler_overrun_count);
-              }
+    return (mustYield == pdTRUE);
+}
+
+static void continuous_adc_task(void *pvParameters)
+{
+    esp_err_t ret;
+    uint32_t ret_num = 0;
+    uint8_t result[EXAMPLE_READ_LEN] = {0};
+
+    s_task_handle = xTaskGetCurrentTaskHandle();
+
+    adc_continuous_evt_cbs_t cbs = {
+        .on_conv_done = s_conv_done_cb,
+    };
+    ESP_ERROR_CHECK(adc_continuous_register_event_callbacks(*get_adc_cont_handle(), &cbs, NULL));
+    ESP_ERROR_CHECK(adc_continuous_start(*get_adc_cont_handle()));
+
+    while(1) {
+        ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+
+        while (1) {
+            ret = adc_continuous_read(*get_adc_cont_handle(), result, EXAMPLE_READ_LEN, &ret_num, 0);
+            if (ret == ESP_OK) {
+                for (int i = 0; i < ret_num; i += SOC_ADC_DIGI_RESULT_BYTES * 2) {
+                    adc_digi_output_data_t *p = (adc_digi_output_data_t*)&result[i];
+                    // We have two channels, so we get two results one after another
+                    uint16_t ch0_val = p[0].val; // Assuming Ambient Light
+                    uint16_t ch1_val = p[1].val; // Assuming Microphone
+                    // Downsample: 20kHz -> 2kHz means we take 1 of every 10 samples
+                    // The loop already iterates through all samples, we just need to decimate.
+                    if ((i / (SOC_ADC_DIGI_RESULT_BYTES * 2)) % 10 == 0) {
+                        taskENTER_CRITICAL(&samplerMux);
+                        microphone_ring[micRingBufferIndex] = ch1_val;
+                        ambLight_result = ch0_val; // Update ambient light with the latest value
+                        micRingBufferIndex = (micRingBufferIndex + 1) % RING_BUFFER_SIZE;
+                        taskEXIT_CRITICAL(&samplerMux);
+                    }
+                }
+            } else if (ret == ESP_ERR_TIMEOUT) {
+                break; // No more data to read
             }
         }
     }
 }
+
+// ============ High-Speed Sampler (Callback + Task) for 2kHz LIS3DH Sampling ============
+
+// ISR triggered by hardware timer
+static void IRAM_ATTR timer_callback(void *arg) {
+  if (!lis3dhSamplerTaskHandle) {
+    return;
+  }
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    vTaskNotifyGiveFromISR(lis3dhSamplerTaskHandle, &xHigherPriorityTaskWoken);
+    // If a higher-priority task was unblocked, request a context switch.
+    if (xHigherPriorityTaskWoken) {
+        portYIELD_FROM_ISR();
+    }
+}
+
+void setup_timer() {
+    const esp_timer_create_args_t timer_args = {
+        .callback = &timer_callback,
+        .name = "sampler_timer"
+    };
+
+    esp_timer_handle_t timer_handle;
+  esp_err_t ret = esp_timer_create(&timer_args, &timer_handle);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to create sampler timer: %s", esp_err_to_name(ret));
+    while (1) vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+    // Start the timer to trigger every 500 microseconds (2kHz)
+  ret = esp_timer_start_periodic(timer_handle, 500);
+  if (ret != ESP_OK) {
+    ESP_LOGE(TAG, "Failed to start sampler timer: %s", esp_err_to_name(ret));
+    while (1) vTaskDelay(pdMS_TO_TICKS(1000));
+  }
+}
+
+static void lis3dh_sampler_task(void *pvParameters) {
+    ESP_LOGI(TAG, "LIS3DH Sampler Task Started");
+    static uint32_t sampler_overrun_count = 0;
+    while (1) {
+        if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
+            int64_t t0 = esp_timer_get_time();
+            measureLIS3DH(&accel_results);
+            int64_t t1 = esp_timer_get_time();
+            taskENTER_CRITICAL(&samplerMux);
+            accelX_ring[accelRingBufferIndex] = (int16_t)(accel_results.ax * 1000);
+            accelY_ring[accelRingBufferIndex] = (int16_t)(accel_results.ay * 1000);
+            accelZ_ring[accelRingBufferIndex] = (int16_t)(accel_results.az * 1000);
+            accelRingBufferIndex = (accelRingBufferIndex + 1) % RING_BUFFER_SIZE;
+            taskEXIT_CRITICAL(&samplerMux);
+            int64_t t2 = esp_timer_get_time();
+            int64_t total_us = t2 - t0;
+            if (total_us > 500) {
+              sampler_overrun_count++;
+              ESP_LOGW(TAG, "LIS3DH Sampler overrun: %lld us (lis=%lld, crit=%lld) total_overruns=%u",
+                     total_us, (long long)(t1-t0), (long long)(t2-t1), sampler_overrun_count);
+            }
+        }
+    }
+}
+
 // ============ Main SPI Command Handler - Address-Based Protocol ============
 void process_spi_command() {
   // The transaction has already happened, we just process the data.
@@ -506,16 +546,28 @@ void startMeasurementTask() {
 
 // Start the high-speed sampler task (continuous 2kHz accel + mic sampling)
 void startHighSpeedSamplerTask() {
-  // 1. Create the high-priority task that will perform the sampling
   xTaskCreatePinnedToCore(
-    highSpeedSamplerTask,
+    continuous_adc_task,
     "HighSpeedSampler",
-    8192,          // Stack size (8 KB - safe for SPI + ADC operations)
+    4096,
     NULL,           // Parameters
     configMAX_PRIORITIES - 1, // Highest priority to ensure timely sampling and prevent overruns
     &samplerTaskHandle,
     0               // Core 0, same as the timer and other tasks for simplicity
   );
+  ESP_LOGI(TAG, "Continuous ADC sampler task created on Core 0");
+}
+
+void startLis3dhSamplerTask() {
+  xTaskCreatePinnedToCore(
+    lis3dh_sampler_task,
+    "Lis3dhSampler",
+    4096,
+    NULL,
+    configMAX_PRIORITIES - 1, // Highest priority
+    &lis3dhSamplerTaskHandle,
+    0);
+  ESP_LOGI(TAG, "LIS3DH sampler task created on Core 0");
 }
 void initIRSamplerTask() {
     // Start IR sampler task to keep thermal frame cache fresh

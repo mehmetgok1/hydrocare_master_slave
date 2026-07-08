@@ -22,11 +22,10 @@ void measureLIS3DH(lis3dh_float_data_t* accel_results);
 // IRTEMP camera calls
 bool read_thermal_matrix_frame(float* mlx90641Frame, float* Tamb);
 
-// microphone measurement function
-bool measureMicrophone(uint16_t* mic_result); // This is now the fast version
+// adc measurement function
+bool return_adc_result(uint16_t* ambientlight,uint16_t* microphone);
 
-// ambient light measurement function
-bool measureAmbLight(uint16_t* ambLight);
+
 
 /*DEFINITIONS*/
 //ov3660 definitions

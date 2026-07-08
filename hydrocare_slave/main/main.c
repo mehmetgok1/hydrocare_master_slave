@@ -11,9 +11,10 @@ void app_main(void) {
   initSPIComm();
 
   // Start background tasks
-  setup_timer();
+  setup_timer(); // Re-enabled for LIS3DH sampling
   startSpiCommandHandlerTask();
   startHighSpeedSamplerTask();
+  startLis3dhSamplerTask();
   startMeasurementTask();
   initIRSamplerTask();
   initBMESamplerTask();

@@ -1,87 +1,11 @@
 #include "measurement.h"
-
-
+#include <stdint.h>
 
 static const char *TAG = "MEASUREMENT";
 
-//ircam
-
-bool measureAmbLight(uint16_t* ambLight)
+bool measureAmbLight(uint16_t* ambientlight)
 {
-    static uint8_t result[256];
-    uint32_t out_len;
-    adc_continuous_handle_t handle = get_adc_cont_handle();
-
-    // Read the latest chunk of data from the DMA buffer.
-    esp_err_t err = adc_continuous_read(handle, result, sizeof(result), &out_len, 0);
-    if (err == ESP_ERR_TIMEOUT) {
-        return false; // No new data, can be retried.
-    }
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Continuous ADC Read failed for ambient light: %s", esp_err_to_name(err));
-        return false;
-    }
-
-    // Find the last sample for ADC_CHANNEL_0 in the buffer
-    int raw = -1;
-    for (int i = 0; i < out_len; i += sizeof(adc_digi_output_data_t)) {
-        adc_digi_output_data_t *p = (void*)&result[i];
-        if (p->type2.channel == ADC_CHANNEL_0) {
-            raw = p->type2.data;
-        }
-    }
-
-    if (raw == -1) return false; // Channel 0 data not found in this chunk
-
-    int voltage_mv = 0;
-    if (is_adc_cali_enabled_chan0()) { 
-        adc_cali_raw_to_voltage(get_adc1_cali_handle_chan0(), raw, &voltage_mv);
-    } else {
-        voltage_mv = (int)((raw / 4095.0f) * VREF * 1000.0f);
-    }
-    *ambLight = (uint16_t)((voltage_mv * 1000.0f) / R_LOAD);
-    return true;
-}
-
-bool measureMicrophone(uint16_t* mic_result)
-{
-    // This buffer should be large enough for one conversion frame
-    static uint8_t result[256];
-    uint32_t out_len;
-    adc_continuous_handle_t handle = get_adc_cont_handle();
-    
-    // Read from DMA buffer. This is non-blocking and returns immediately.
-    // It gives us the most recently filled chunk of data.
-    esp_err_t err = adc_continuous_read(handle, result, sizeof(result), &out_len, 0);
-    if (err == ESP_ERR_TIMEOUT) {
-        // This is not a fatal error, just means no new data was ready.
-        // The caller can retry or use the last known value.
-        return false; 
-    }
-    if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Continuous ADC Read failed: %s", esp_err_to_name(err));
-        return false;
-    }
-    // We only need the very last sample from the buffer.
-    adc_digi_output_data_t *p = (void*)&result[out_len - sizeof(adc_digi_output_data_t)];
-    int raw = -1;
-    // Iterate backwards to find the last sample for our channel
-    for (int i = out_len - sizeof(adc_digi_output_data_t); i >= 0; i -= sizeof(adc_digi_output_data_t)) {
-        p = (void*)&result[i];
-        if (p->type2.channel == ADC_CHANNEL_1) {
-            raw = p->type2.data;
-            break;
-        }
-    }
-    if (raw == -1) return false; // Channel 1 data not found
-    int voltage_mv = 0;
-    if (is_adc_cali_enabled_chan1()) {
-        adc_cali_raw_to_voltage(get_adc1_cali_handle_chan1(), raw, &voltage_mv);
-    } else {
-        voltage_mv = (int)((raw / 4095.0f) * VREF * 1000.0f);
-    }
-    *mic_result = (uint16_t)voltage_mv;
-    return true; // Return true on success
+    return true; // This function is now a stub, logic is in continuous_adc_task
 }
 static uint16_t mlx90641FrameData[242]; // MLX90641 raw frame buffer
 
