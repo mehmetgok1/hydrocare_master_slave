@@ -5,7 +5,7 @@
 #include <inttypes.h> // Include for portable format specifiers like PRIu32
 
 const char *TAG2 = "MAIN";
-bool debug_infos = true; // Set to true to enable detailed debug prints*/
+bool debug_infos = false; // Set to true to enable detailed debug prints*/
 
 volatile bool timerStream = false;
 uint16_t downsampled16x16[256];  // Shared with BLE for transmission
