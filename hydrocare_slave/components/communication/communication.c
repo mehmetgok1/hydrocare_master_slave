@@ -214,6 +214,8 @@ void collectMeasurementData() {
              currentData.accelZ_samples[0], currentData.accelZ_samples[199], currentData.accelZ_samples[399]);
     ESP_LOGI(TAG, "Seq:%d MicIdx:%d AccelIdx:%d TxBufReady", sequenceNumber, micRingBufferIndex, accelRingBufferIndex);
 
+  }else{
+    printf("%d", sequenceNumber);
   }
   // Buffer info
 }
