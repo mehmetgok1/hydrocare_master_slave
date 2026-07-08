@@ -18,6 +18,7 @@ void set_ir_led(bool status);
 
 //lis3dh calls
 void measureLIS3DH(lis3dh_float_data_t* accel_results);
+uint8_t measureLIS3DH_FIFO(lis3dh_float_data_fifo_t accel_results_fifo);
 
 // IRTEMP camera calls
 bool read_thermal_matrix_frame(float* mlx90641Frame, float* Tamb);

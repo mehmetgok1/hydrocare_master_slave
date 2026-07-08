@@ -19,7 +19,7 @@ static uint16_t microphone_ring[RING_BUFFER_SIZE] = {0};
 volatile int micRingBufferIndex = 0;
 
 static uint16_t sequenceNumber = 0;
-static lis3dh_float_data_t accel_results={0};
+static lis3dh_float_data_fifo_t accel_results_fifo;
 static uint16_t ambLight_result=0;
 // Double-buffer for IR frame sampling (background task writes, collector reads)
 static float mlx_frame_buf[2][192] = { {0} };
@@ -141,13 +141,15 @@ void collectMeasurementData() {
   // --- Critical section to copy from ring buffers ---
   taskENTER_CRITICAL(&samplerMux);
   int micEndIdx = micRingBufferIndex;
+  int accelEndIdx = accelRingBufferIndex;
   int micStartIdx = (micEndIdx - 400 + RING_BUFFER_SIZE) % RING_BUFFER_SIZE;
+  int accelStartIdx = (accelEndIdx - 400 + RING_BUFFER_SIZE) % RING_BUFFER_SIZE;
   for (int i = 0; i < 400; i++) {
     int micSrcIdx = (micStartIdx + i) % RING_BUFFER_SIZE;
-    // Provide constant data for accelerometer to test for bottlenecks
-    currentData.accelX_samples[i] = 1234;
-    currentData.accelY_samples[i] = 1234;
-    currentData.accelZ_samples[i] = 1234;
+    int accelSrcIdx = (accelStartIdx + i) % RING_BUFFER_SIZE;
+    currentData.accelX_samples[i] = accelX_ring[accelSrcIdx];
+    currentData.accelY_samples[i] = accelY_ring[accelSrcIdx];
+    currentData.accelZ_samples[i] = accelZ_ring[accelSrcIdx];
     currentData.microphoneSamples[i] = microphone_ring[micSrcIdx];
   }
   taskEXIT_CRITICAL(&samplerMux);
@@ -371,8 +373,8 @@ void setup_timer() {
     ESP_LOGE(TAG, "Failed to create sampler timer: %s", esp_err_to_name(ret));
     while (1) vTaskDelay(pdMS_TO_TICKS(1000));
   }
-    // Start the timer to trigger every 500 microseconds (2kHz)
-  ret = esp_timer_start_periodic(timer_handle, 500);
+    // Start the timer to trigger every 6400 microseconds (6.4ms), the time to fill the 32-sample FIFO at 5kHz.
+  ret = esp_timer_start_periodic(timer_handle, 6400);
   if (ret != ESP_OK) {
     ESP_LOGE(TAG, "Failed to start sampler timer: %s", esp_err_to_name(ret));
     while (1) vTaskDelay(pdMS_TO_TICKS(1000));
@@ -384,18 +386,29 @@ static void lis3dh_sampler_task(void *pvParameters) {
     static uint32_t sampler_overrun_count = 0;
     while (1) {
         if (ulTaskNotifyTake(pdTRUE, portMAX_DELAY)) {
-            int64_t t0 = esp_timer_get_time();
-            measureLIS3DH(&accel_results);
+            int64_t t0 = esp_timer_get_time();            
+            uint8_t samples_read = measureLIS3DH_FIFO(accel_results_fifo);
             int64_t t1 = esp_timer_get_time();
-            taskENTER_CRITICAL(&samplerMux);
-            accelX_ring[accelRingBufferIndex] = (int16_t)(accel_results.ax * 1000);
-            accelY_ring[accelRingBufferIndex] = (int16_t)(accel_results.ay * 1000);
-            accelZ_ring[accelRingBufferIndex] = (int16_t)(accel_results.az * 1000);
-            accelRingBufferIndex = (accelRingBufferIndex + 1) % RING_BUFFER_SIZE;
-            taskEXIT_CRITICAL(&samplerMux);
+            if (samples_read > 0) {
+                // Downsample from 5kHz to 2kHz.
+                // In a 6.4ms window, we get 32 samples at 5kHz.
+                // To get a 2kHz rate, we need 6.4ms / (1/2000Hz) = 12.8 samples.
+                // We will pick 13 samples from the batch by taking every ~2.5th sample.
+                taskENTER_CRITICAL(&samplerMux);
+                for (int i = 0; i < 13; i++) {
+                    int sample_index = (int)(i * 2.5f);
+                    if (sample_index < samples_read) {
+                        accelX_ring[accelRingBufferIndex] = (int16_t)(accel_results_fifo[sample_index].ax * 1000);
+                        accelY_ring[accelRingBufferIndex] = (int16_t)(accel_results_fifo[sample_index].ay * 1000);
+                        accelZ_ring[accelRingBufferIndex] = (int16_t)(accel_results_fifo[sample_index].az * 1000);
+                        accelRingBufferIndex = (accelRingBufferIndex + 1) % RING_BUFFER_SIZE;
+                    }
+                }
+                taskEXIT_CRITICAL(&samplerMux);
+            }
             int64_t t2 = esp_timer_get_time();
             int64_t total_us = t2 - t0;
-            if (total_us > 500) {
+            if (total_us > 6400) {
               sampler_overrun_count++;
               ESP_LOGW(TAG, "LIS3DH Sampler overrun: %lld us (lis=%lld, crit=%lld) total_overruns=%u",
                      total_us, (long long)(t1-t0), (long long)(t2-t1), sampler_overrun_count);

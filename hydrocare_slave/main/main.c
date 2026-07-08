@@ -12,9 +12,10 @@ void app_main(void) {
 
   // Start background tasks
   // setup_timer(); // Temporarily disabled for bottleneck testing
+  setup_timer();
   startSpiCommandHandlerTask();
   startHighSpeedSamplerTask();
-  // startLis3dhSamplerTask(); // Temporarily disabled for bottleneck testing
+  startLis3dhSamplerTask();
   startMeasurementTask();
   initIRSamplerTask();
   initBMESamplerTask();

@@ -29,10 +29,15 @@ bool read_thermal_matrix_frame(float* mlx90641Frame, float* Tamb) {
 }
 
 
-void measureLIS3DH(lis3dh_float_data_t* accel_results)
+uint8_t measureLIS3DH_FIFO(lis3dh_float_data_fifo_t accel_results_fifo)
 {
-    //lis3dh_new_data (get_lis3dh_dev_handle());
-    lis3dh_get_float_data (get_lis3dh_dev_handle(), accel_results);
+    return lis3dh_get_float_data_fifo(get_lis3dh_dev_handle(), accel_results_fifo);
+}
+
+void measureLIS3DH(lis3dh_float_data_t* accel_results) // Kept for compatibility, but not used by FIFO sampler
+{
+    // This function now reads a single value, which is less efficient than the FIFO method.
+    lis3dh_get_float_data(get_lis3dh_dev_handle(), accel_results);
 }
 
 void set_led_brightness(uint8_t brightness_pct) {

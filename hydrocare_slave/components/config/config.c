@@ -216,7 +216,7 @@ void initLIS3DH()
     // Add the LIS3DH device to the SPI bus
     spi_device_interface_config_t devcfg = {
         .command_bits = 0,
-        .clock_speed_hz = 10 * 1000 * 1000, // 400kHz
+        .clock_speed_hz = 5 * 1000 * 1000, // 400kHz
         .mode = 3, // LIS3DH uses SPI mode 3 (CPOL=1, CPHA=1)
         .spics_io_num = Acc_CS,
         .queue_size = 1,
@@ -230,6 +230,9 @@ void initLIS3DH()
 
     // LAST STEP: Finally set scale and mode to start measurements
     lis3dh_set_scale(lis3dh_sensor, lis3dh_scale_2_g);
+    // Set FIFO to stream mode. The watermark (thresh) is set to 0, which is not used in this configuration
+    // as we will read all available samples in the sampler task.
+    lis3dh_set_fifo_mode(lis3dh_sensor, lis3dh_stream, 0, lis3dh_int1_signal);
     lis3dh_set_mode(lis3dh_sensor, lis3dh_odr_5000, lis3dh_low_power, true, true, true);
 }
 void initI2CBus(void) {

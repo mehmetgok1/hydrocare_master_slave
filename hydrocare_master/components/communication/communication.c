@@ -205,7 +205,7 @@ bool readSlaveData(SensorDataPacket* outPacket) {
         ESP_LOGE(TAG, "Timeout waiting for STATUS_LOCKED");
         return false;
     }
-
+        //10207
     // ========== STEP 5: Bulk Read Sensor Data ==========
     // The function now returns a pointer to the payload inside the DMA buffer.
     uint8_t* payloadPtr = spiReadBulk(ADDR_SENSOR_DATA, sizeof(SensorDataPacket));
