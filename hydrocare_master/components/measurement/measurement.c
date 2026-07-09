@@ -69,56 +69,64 @@ bool measureBatteryLevel(uint16_t* batteryLevelOut, float* batteryPercentageOut)
   gpio_set_level((gpio_num_t)Batt_EN, 0);
   gpio_set_level((gpio_num_t)CE_En, 1);
 
-  //batteryLevel = 0;
-  int raw = 0;
-  *batteryLevelOut = 0;
+  int raw_accum = 0;
   SemaphoreHandle_t adcMutex = get_adc_mutex();
-  for(int i=0;i<Batt_Meas_Count;i++){
+  
+  for(int i = 0; i < Batt_Meas_Count; i++){
     if (!adcMutex || xSemaphoreTake(adcMutex, portMAX_DELAY) != pdTRUE) {
-      ESP_LOGE("MEASUREMENT", "ADC mutex unavailable for microphone read!");
+      ESP_LOGE("MEASUREMENT", "ADC mutex unavailable for battery read!");
       return false;
     }
+    
+    int raw = 0;
     esp_err_t err = adc_oneshot_read(get_adc1_handle(), ADC_CHANNEL_1, &raw);
     xSemaphoreGive(adcMutex);
+    
     if (err != ESP_OK) {
-      return false; // Return 0 (False) on failure
+      // Swapped these two lines so the log actually prints!
       ESP_LOGE("MEASUREMENT", "Failed to read raw ADC1 Channel 1 value!");
+      return false; 
     }
-    //if (is_adc_cali_enabled_chan1()) {  //no calibration needed
-    //    adc_cali_raw_to_voltage(get_adc1_cali_handle_chan1(), raw2, &voltage_mv2);
-    //}
-    *batteryLevelOut = *batteryLevelOut + raw;
+    raw_accum += raw;
   }
+  
   gpio_set_level((gpio_num_t)Batt_EN, 1);
   gpio_set_level((gpio_num_t)CE_En, 0);
-  *batteryLevelOut = *batteryLevelOut / Batt_Meas_Count;
-  *batteryLevelOut = (*batteryLevelOut * Batt_VoltDiv_Mult*DigitalSupply) / 4095;
-  *batteryLevelOut = *batteryLevelOut * Batt_Const_X - Batt_Const_Y;
-  //ESP_LOGI(TAG, "Battery Level Value: %d raw", *batteryLevelOut);
 
+  // 1. Calculate the average raw value
+  float avg_raw = (float)raw_accum / Batt_Meas_Count;
+  
+  // 2. Do the voltage calculation using a local FLOAT
+  float voltage = (avg_raw * Batt_VoltDiv_Mult * DigitalSupply) / 4095.0f;
+  voltage = voltage * Batt_Const_X - Batt_Const_Y;
+
+  // 3. Apply piecewise logic using the accurate float
   // High clamp
-  if (*batteryLevelOut >= 4.20f)
+  if (voltage >= 4.20f)
       *batteryPercentageOut = 100.0f;
   // 4.20 → 3.95  (100 → 75)
-  else if (*batteryLevelOut < 4.20f && *batteryLevelOut >= 3.95f)
-      *batteryPercentageOut = 75.0f + (*batteryLevelOut - 3.95f) * (25.0f / 0.25f);
+  else if (voltage < 4.20f && voltage >= 3.95f)
+      *batteryPercentageOut = 75.0f + (voltage - 3.95f) * (25.0f / 0.25f);
   // 3.95 → 3.80 (75 → 45)
-  else if (*batteryLevelOut < 3.95f && *batteryLevelOut >= 3.80f)
-      *batteryPercentageOut = 45.0f + (*batteryLevelOut - 3.80f) * (30.0f / 0.15f);
+  else if (voltage < 3.95f && voltage >= 3.80f)
+      *batteryPercentageOut = 45.0f + (voltage - 3.80f) * (30.0f / 0.15f);
   // 3.80 → 3.70 (45 → 28)
-  else if (*batteryLevelOut < 3.80f && *batteryLevelOut >= 3.70f)
-      *batteryPercentageOut = 28.0f + (*batteryLevelOut - 3.70f) * (17.0f / 0.10f);
+  else if (voltage < 3.80f && voltage >= 3.70f)
+      *batteryPercentageOut = 28.0f + (voltage - 3.70f) * (17.0f / 0.10f);
   // 3.70 → 3.50 (28 → 6)
-  else if (*batteryLevelOut < 3.70f && *batteryLevelOut >= 3.50f)
-      *batteryPercentageOut = 6.0f + (*batteryLevelOut - 3.50f) * (22.0f / 0.20f);
+  else if (voltage < 3.70f && voltage >= 3.50f)
+      *batteryPercentageOut = 6.0f + (voltage - 3.50f) * (22.0f / 0.20f);
   // 3.50 → 3.20 (6 → 1)
-  else if (*batteryLevelOut < 3.50f && *batteryLevelOut >= 3.20f)
-      *batteryPercentageOut = 1.0f + (*batteryLevelOut - 3.20f) * (5.0f / 0.30f);
+  else if (voltage < 3.50f && voltage >= 3.20f)
+      *batteryPercentageOut = 1.0f + (voltage - 3.20f) * (5.0f / 0.30f);
   // Low clamp
-  else if (*batteryLevelOut < 3.20f)
+  else if (voltage < 3.20f)
       *batteryPercentageOut = 0.0f;
+
+  // 4. Save the voltage out in millivolts so it safely fits in your uint16_t
+  *batteryLevelOut = (uint16_t)(voltage * 1000.0f); 
+
   return true;
-  
 }
 
 bool measurePIR(uint16_t* PIRValue){
@@ -139,8 +147,8 @@ bool measurePIR(uint16_t* PIRValue){
  /* if (is_adc_cali_enabled_chan2()) { 
       adc_cali_raw_to_voltage(get_adc1_cali_handle_chan2(), raw, &voltage_mv);
   }  */
-  ESP_LOGI(TAG, "PIR Value: %d", raw);
   *PIRValue = (uint16_t)raw;
+  ESP_LOGI(TAG, "PIR Value: %u", *PIRValue);
   return true;
 }
 bool measureAmbLight(uint16_t* ambLight)
@@ -161,7 +169,7 @@ bool measureAmbLight(uint16_t* ambLight)
     }
     voltage_mv = (uint16_t)((raw / 4095.0f) * VREF * 1000.0f);
     *ambLight = (uint16_t)((voltage_mv * 1000.0f) / R_LOAD);
-    ESP_LOGI(TAG, "AmbLight Value: %d mV", *ambLight);
+    ESP_LOGI(TAG, "AmbLight Value: %u (from %u mV)", *ambLight, voltage_mv);
     return true;
 }
 

@@ -36,15 +36,15 @@ void sdCardLoggingTask(void *parameter);
 void loop();
 
 //intermediate values
-uint16_t master_batteryLevel;
-float    master_batteryPercentage;
-uint16_t master_ambLight;
-uint16_t master_PIRValue;
-uint16_t master_movingDist; 
-uint8_t  master_movingEnergy; 
-uint16_t master_staticDist; 
-uint8_t  master_staticEnergy; 
-uint16_t master_detectionDist;
+uint16_t master_batteryLevel = 0;
+float    master_batteryPercentage = 0.0f;
+uint16_t master_ambLight = 0;
+uint16_t master_PIRValue = 0;
+uint16_t master_movingDist = 0;
+uint8_t  master_movingEnergy = 0;
+uint16_t master_staticDist = 0;
+uint8_t  master_staticEnergy = 0;
+uint16_t master_detectionDist = 0;
 
 
 void app_main(void) {
@@ -280,10 +280,9 @@ void loop() {
     measureAmbLight(&master_ambLight);
     measurePIR(&master_PIRValue);
     measuremmWave(&master_movingDist, &master_movingEnergy, &master_staticDist, &master_staticEnergy, &master_detectionDist);
-    ESP_LOGI(TAG2, "[MAIN] Master Sensors: Battery=%.2fV (%.1f%%), AmbLight=%u, PIR=%u, mmWave: movingDist=%u, movingEnergy=%u, staticDist=%u, staticEnergy=%u, detectionDist=%u",
+    ESP_LOGI(TAG2, "[MAIN] Master Sensors: Battery=%u (%.1f%%), AmbLight=%u, PIR=%u, mmWave: movingDist=%u, movingEnergy=%u, staticDist=%u, staticEnergy=%u, detectionDist=%u",
             master_batteryLevel, master_batteryPercentage, master_ambLight, master_PIRValue,
-            master_movingDist, master_movingEnergy, master_staticDist, master_staticEnergy, master_detectionDist);
-    // ==================== COMBINE AND PUSH TO QUEUE ====================
+            master_movingDist, master_movingEnergy, master_staticDist, master_staticEnergy, master_detectionDist);// ==================== COMBINE AND PUSH TO QUEUE ====================
     if (slaveDataValid) {
       
       CombinedDataPacket* currentPacket = NULL;
@@ -316,10 +315,10 @@ void loop() {
       downsampleRGBFrame(slaveData.rgbFrame, downsampled16x16);
       memcpy(irFrame16x12, slaveData.irFrame, sizeof(irFrame16x12));
     }
-    notifyAll(master_batteryPercentage, slaveData.ambientLight, master_PIRValue, master_movingDist, master_ambLight, 
-              master_movingDist, master_movingEnergy, master_staticDist, master_staticEnergy, master_detectionDist,
-              downsampled16x16, sizeof(downsampled16x16), 
-              irFrame16x12, sizeof(irFrame16x12));
+    notifyAll(master_batteryPercentage, slaveData.ambientLight, master_PIRValue,master_ambLight, master_movingDist, 
+             master_movingEnergy, master_staticDist, master_staticEnergy, master_detectionDist,
+                downsampled16x16, sizeof(downsampled16x16), 
+                 irFrame16x12, sizeof(irFrame16x12));
 
     // Total loop execution time
     if(debug_infos) {
