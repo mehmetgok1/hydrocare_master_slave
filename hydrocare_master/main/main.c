@@ -280,7 +280,9 @@ void loop() {
     measureAmbLight(&master_ambLight);
     measurePIR(&master_PIRValue);
     measuremmWave(&master_movingDist, &master_movingEnergy, &master_staticDist, &master_staticEnergy, &master_detectionDist);
-
+    ESP_LOGI(TAG2, "[MAIN] Master Sensors: Battery=%.2fV (%.1f%%), AmbLight=%u, PIR=%u, mmWave: movingDist=%u, movingEnergy=%u, staticDist=%u, staticEnergy=%u, detectionDist=%u",
+            master_batteryLevel, master_batteryPercentage, master_ambLight, master_PIRValue,
+            master_movingDist, master_movingEnergy, master_staticDist, master_staticEnergy, master_detectionDist);
     // ==================== COMBINE AND PUSH TO QUEUE ====================
     if (slaveDataValid) {
       
@@ -328,7 +330,7 @@ void loop() {
         }
     }else {
         if (slaveDataValid) {
-            printf("%d ", slaveData.sequence);
+            //printf("%d ", slaveData.sequence);
         }
     }
     timerStream = 0;

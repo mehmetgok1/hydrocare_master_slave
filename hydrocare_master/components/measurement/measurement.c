@@ -64,31 +64,6 @@ void measuremmWave(uint16_t* movingDist, uint8_t* movingEnergy, uint16_t* static
         }
     }
 }
-
-bool measurePIR(uint16_t* PIRValue){
-  int raw = 0;
-  int voltage_mv = 0;
-  SemaphoreHandle_t adcMutex = get_adc_mutex();
-  if (!adcMutex || xSemaphoreTake(adcMutex, portMAX_DELAY) != pdTRUE) {
-    ESP_LOGE("MEASUREMENT", "ADC mutex unavailable for ambient light read!");
-    return false;
-  }
-  // 1. Read the raw 12-bit value once
-  esp_err_t err = adc_oneshot_read(get_adc1_handle(), ADC_CHANNEL_2, &raw);
-  xSemaphoreGive(adcMutex);
-  if (err != ESP_OK) {
-      ESP_LOGE("MEASUREMENT", "Failed to read raw ADC1 Channel 2 value!");
-      return false; // Return false on failure instead of breaking
-  }
-  //2. Convert raw bits into calibrated Millivolts using the configuration getter
-  if (is_adc_cali_enabled_chan2()) { 
-      adc_cali_raw_to_voltage(get_adc1_cali_handle_chan2(), raw, &voltage_mv);
-  }  
-  //ESP_LOGI(TAG, "PIR Value: %d mV", voltage_mv);
-  *PIRValue = (uint16_t)voltage_mv;
-  return true;
-}
-
 bool measureBatteryLevel(uint16_t* batteryLevelOut, float* batteryPercentageOut) 
 {
   gpio_set_level((gpio_num_t)Batt_EN, 0);
@@ -145,10 +120,33 @@ bool measureBatteryLevel(uint16_t* batteryLevelOut, float* batteryPercentageOut)
   return true;
   
 }
+
+bool measurePIR(uint16_t* PIRValue){
+  int raw = 0;
+  SemaphoreHandle_t adcMutex = get_adc_mutex();
+  if (!adcMutex || xSemaphoreTake(adcMutex, portMAX_DELAY) != pdTRUE) {
+    ESP_LOGE("MEASUREMENT", "ADC mutex unavailable for ambient light read!");
+    return false;
+  }
+  // 1. Read the raw 12-bit value once
+  esp_err_t err = adc_oneshot_read(get_adc1_handle(), ADC_CHANNEL_2, &raw);
+  xSemaphoreGive(adcMutex);
+  if (err != ESP_OK) {
+      ESP_LOGE("MEASUREMENT", "Failed to read raw ADC1 Channel 2 value!");
+      return false; // Return false on failure instead of breaking
+  }
+  //2. Convert raw bits into calibrated Millivolts using the configuration getter
+ /* if (is_adc_cali_enabled_chan2()) { 
+      adc_cali_raw_to_voltage(get_adc1_cali_handle_chan2(), raw, &voltage_mv);
+  }  */
+  ESP_LOGI(TAG, "PIR Value: %d", raw);
+  *PIRValue = (uint16_t)raw;
+  return true;
+}
 bool measureAmbLight(uint16_t* ambLight)
 {
   int raw = 0;
-  int voltage_mv = 0;
+  uint16_t voltage_mv = 0;
   SemaphoreHandle_t adcMutex = get_adc_mutex();
   if (!adcMutex || xSemaphoreTake(adcMutex, portMAX_DELAY) != pdTRUE) {
     ESP_LOGE("MEASUREMENT", "ADC mutex unavailable for ambient light read!");
@@ -161,16 +159,9 @@ bool measureAmbLight(uint16_t* ambLight)
         ESP_LOGE("MEASUREMENT", "Failed to read raw ADC1 Channel 0 value!");
         return false; // Return false on failure instead of breaking
     }
-
-    //2. Convert raw bits into calibrated Millivolts using the configuration getter
-    if (is_adc_cali_enabled_chan0()) { 
-        adc_cali_raw_to_voltage(get_adc1_cali_handle_chan0(), raw, &voltage_mv);
-    } else {
-        // Fallback scaling calculation
-        voltage_mv = (int)((raw / 4095.0f) * VREF * 1000.0f);
-    }
+    voltage_mv = (uint16_t)((raw / 4095.0f) * VREF * 1000.0f);
     *ambLight = (uint16_t)((voltage_mv * 1000.0f) / R_LOAD);
-    //ESP_LOGI(TAG, "AmbLight Value: %d mV", voltage_mv);
+    ESP_LOGI(TAG, "AmbLight Value: %d mV", *ambLight);
     return true;
 }
 
