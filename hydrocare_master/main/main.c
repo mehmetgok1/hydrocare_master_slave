@@ -329,7 +329,7 @@ void loop() {
         }
     }else {
         if (slaveDataValid) {
-            //printf("%d ", slaveData.sequence);
+            printf("%d ", slaveData.sequence);
         }
     }
     timerStream = 0;
