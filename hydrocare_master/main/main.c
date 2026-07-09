@@ -280,9 +280,9 @@ void loop() {
     measureAmbLight(&master_ambLight);
     measurePIR(&master_PIRValue);
     measuremmWave(&master_movingDist, &master_movingEnergy, &master_staticDist, &master_staticEnergy, &master_detectionDist);
-    ESP_LOGI(TAG2, "[MAIN] Master Sensors: Battery=%u (%.1f%%), AmbLight=%u, PIR=%u, mmWave: movingDist=%u, movingEnergy=%u, staticDist=%u, staticEnergy=%u, detectionDist=%u",
-            master_batteryLevel, master_batteryPercentage, master_ambLight, master_PIRValue,
-            master_movingDist, master_movingEnergy, master_staticDist, master_staticEnergy, master_detectionDist);// ==================== COMBINE AND PUSH TO QUEUE ====================
+    //ESP_LOGI(TAG2, "[MAIN] Master Sensors: Battery=%u (%.1f%%), AmbLight=%u, PIR=%u, mmWave: movingDist=%u, movingEnergy=%u, staticDist=%u, staticEnergy=%u, detectionDist=%u",
+    //        master_batteryLevel, master_batteryPercentage, master_ambLight, master_PIRValue,
+    //        master_movingDist, master_movingEnergy, master_staticDist, master_staticEnergy, master_detectionDist);// ==================== COMBINE AND PUSH TO QUEUE ====================
     if (slaveDataValid) {
       
       CombinedDataPacket* currentPacket = NULL;

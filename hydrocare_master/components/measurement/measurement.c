@@ -148,7 +148,7 @@ bool measurePIR(uint16_t* PIRValue){
       adc_cali_raw_to_voltage(get_adc1_cali_handle_chan2(), raw, &voltage_mv);
   }  */
   *PIRValue = (uint16_t)raw;
-  ESP_LOGI(TAG, "PIR Value: %u", *PIRValue);
+  //ESP_LOGI(TAG, "PIR Value: %u", *PIRValue);
   return true;
 }
 bool measureAmbLight(uint16_t* ambLight)
@@ -169,7 +169,7 @@ bool measureAmbLight(uint16_t* ambLight)
     }
     voltage_mv = (uint16_t)((raw / 4095.0f) * VREF * 1000.0f);
     *ambLight = (uint16_t)((voltage_mv * 1000.0f) / R_LOAD);
-    ESP_LOGI(TAG, "AmbLight Value: %u (from %u mV)", *ambLight, voltage_mv);
+    //ESP_LOGI(TAG, "AmbLight Value: %u (from %u mV)", *ambLight, voltage_mv);
     return true;
 }
 
