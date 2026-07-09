@@ -168,7 +168,7 @@ void collectMeasurementData() {
   // Pick the buffer not currently being written to
   int64_t tIrStart = esp_timer_get_time();
   taskENTER_CRITICAL(&mlxMux);
-  int read_idx = 1 - mlx_write_idx;
+  int read_idx = mlx_write_idx;
   taskEXIT_CRITICAL(&mlxMux);
   for (int i = 0; i < 192; i++) {
     currentData.irFrame[i] = (uint16_t)((mlx_frame_buf[read_idx][i] + 40.0f) * 100.0f);
