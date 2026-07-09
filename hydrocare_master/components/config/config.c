@@ -147,16 +147,16 @@ void init_adc_peripheral()
         .bitwidth = ADC_BITWIDTH_12,
         .atten = ADC_ATTEN_DB_12,
     };
-    adc_oneshot_chan_cfg_t config2 = {
-        .bitwidth = ADC_BITWIDTH_12,
-        .atten = ADC_ATTEN_DB_0,
-    };
+    //adc_oneshot_chan_cfg_t config2 = {
+    //    .bitwidth = ADC_BITWIDTH_12,
+    //    .atten = ADC_ATTEN_DB_0,
+    //};
     // AmbLight is on GPIO1 -> ADC1_CH0
     ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_0, &config)); // AmbLight on GPIO1
     // battlevel is on GPIO2 -> ADC1_CH1
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_1, &config2));
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_1, &config));
     // PIR  is on GPIO3 -> ADC1_CH2
-    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_2, &config2));
+    ESP_ERROR_CHECK(adc_oneshot_config_channel(adc1_handle, ADC_CHANNEL_2, &config));
     // ===== Initialize ADC Calibration =====
     adc_cali_enabled_chan0 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_0, ADC_ATTEN_DB_12, &adc1_cali_handle_chan0);
     adc_cali_enabled_chan1 = adc_calibration_init(ADC_UNIT_1, ADC_CHANNEL_1, ADC_ATTEN_DB_0, &adc1_cali_handle_chan1);
