@@ -1,107 +1,150 @@
-
 #include "wifi_stream.h"
-// Note: Replace this extern with a proper configuration getter in a real app
+#include "cJSON.h"
+#include <sys/stat.h>
 
-static const char *TAG = "HTTP_STREAM";
-static const char *DEVICE_ID = "ESP32S3_UNIT_01";
+const char *TAG = "wifi_stream";
 
-// Ensure your SD card was mounted to this base path in your app_main()
-
-void stream_folder_to_tcp(const char* folder_name,char* server_ip) {
+void stream_folder_to_tcp(const char* folder_name, char* server_ip) {
     int64_t task_start = esp_timer_get_time();
-    char server_url[256];
 
-    // Add a guard to prevent running with an unconfigured server IP
-    if (server_ip == NULL || strlen(server_ip) == 0) {
-        ESP_LOGE(TAG, "Cannot start stream: Server IP is not configured.");
+    char *chunk_buffer = malloc(2048);
+    char *json_buffer = malloc(2048); 
+
+    if (!chunk_buffer || !json_buffer) {
+        ESP_LOGE(TAG, "Failed to allocate memory");
         return;
     }
+
+    // --- 1. CALCULATE TOTAL SIZE ---
+    size_t total_size = 0;
+    int max_index = 0;
     
-    // Construct the backend URL
-    snprintf(server_url, sizeof(server_url), "http://%s:8000/upload", server_ip);
-
-    // Allocate the buffer on the heap to avoid stack overflow
-    char *buffer = malloc(2048);
-    if (buffer == NULL) {
-        ESP_LOGE(TAG, "Failed to allocate memory for HTTP stream buffer");
-        return;
-    }
-
-
     for (int i = 0; i < 10000; i += 50) {
         char file_path[256];
         snprintf(file_path, sizeof(file_path), "%s/%s/%s_part_%d.bin", 
                  MOUNT_POINT, folder_name, folder_name, i);
-
-        // Open the file using standard C library functions mapping to ESP-IDF VFS
-        FILE* f = fopen(file_path, "rb");
-        if (f == NULL) {
-            ESP_LOGI(TAG, "No more files found at index %d. Ending transmission.", i);
-            break;
-        }
-
-        // Get file size
+        
         struct stat st;
-        stat(file_path, &st);
-        size_t file_size = st.st_size;
-
-        ESP_LOGI(TAG, "Preparing payload for: %s (%zu bytes)", file_path, file_size);
-
-        // Configure HTTP Client
-        esp_http_client_config_t config = {
-            .url = server_url,
-            .method = HTTP_METHOD_POST,
-            .timeout_ms = 10000,
-        };
-        esp_http_client_handle_t client = esp_http_client_init(&config);
-
-        // Set Headers
-        esp_http_client_set_header(client, "Content-Type", "application/octet-stream");
-        esp_http_client_set_header(client, "X-Device-ID", DEVICE_ID);
-        esp_http_client_set_header(client, "X-Folder-Name", folder_name);
-        
-        char index_str[16];
-        snprintf(index_str, sizeof(index_str), "%d", i);
-        esp_http_client_set_header(client, "X-Part-Index", index_str);
-
-        // Start the HTTP connection with the known file size
-        esp_err_t err = esp_http_client_open(client, file_size);
-        if (err == ESP_OK) {
-            // Buffer to stream data from SD to Network
-            size_t read_bytes;
-            
-            // Read from SD and write to HTTP iteratively (prevents memory exhaustion)
-            while ((read_bytes = fread(buffer, 1, sizeof(buffer), f)) > 0) {
-                int written = esp_http_client_write(client, buffer, read_bytes);
-                if (written < 0) {
-                    ESP_LOGE(TAG, "Failed to write data to HTTP client");
-                    break;
-                }
-            }
-
-            // Finish the request and check the server response
-            esp_http_client_fetch_headers(client);
-            int status_code = esp_http_client_get_status_code(client);
-            
-            if (status_code == 200) {
-                ESP_LOGI(TAG, "Successfully uploaded part %d", i);
-            } else {
-                ESP_LOGE(TAG, "Upload failed for part %d, HTTP Status: %d", i, status_code);
-            }
+        if (stat(file_path, &st) == 0) {
+            total_size += st.st_size;
+            max_index = i;
         } else {
-            ESP_LOGE(TAG, "Unable to connect to backend server. Error: %s", esp_err_to_name(err));
+            break; // No more files
         }
-
-        // Clean up resources for this iteration
-        esp_http_client_cleanup(client);
-        fclose(f);
-        
-        // Yield to allow watchdog and other tasks to run
-        vTaskDelay(pdMS_TO_TICKS(10)); 
     }
 
-    free(buffer); // Free the heap-allocated buffer
+    if (total_size == 0) {
+        ESP_LOGE(TAG, "No files found to upload!");
+        free(chunk_buffer);
+        free(json_buffer);
+        return;
+    }
+    
+    ESP_LOGI(TAG, "Total session size to upload: %zu bytes", total_size);
 
-    int64_t task_duration_ms = (esp_timer_get_time() - task_start) / 1000;
-    ESP_LOGI(TAG, "Total upload routine finished in: %lld ms", task_duration_ms);
+    // --- 2. GET THE PRESIGNED URL (JUST ONCE) ---
+    char get_url[256];
+    snprintf(get_url, sizeof(get_url), "%s?deviceId=%s", API_GATEWAY_URL, get_device_name());
+    
+    esp_http_client_config_t config_get = {
+        .url = get_url,
+        .method = HTTP_METHOD_GET,
+        .crt_bundle_attach = esp_crt_bundle_attach,           
+    };
+    esp_http_client_handle_t client_get = esp_http_client_init(&config_get);
+    esp_http_client_set_header(client_get, "x-api-key", API_KEY);
+    
+    // Open the connection manually (0 means we aren't sending a body)
+    if (esp_http_client_open(client_get, 0) != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to open HTTP connection");
+        esp_http_client_cleanup(client_get);
+        free(chunk_buffer);
+        free(json_buffer);
+        return; 
+    }
+
+    // Fetch the headers so the ESP32 knows how big the incoming JSON is
+    esp_http_client_fetch_headers(client_get);
+    int status_code = esp_http_client_get_status_code(client_get);
+    ESP_LOGI(TAG, "HTTP GET Status Code: %d", status_code);
+
+    // NOW read the response!
+    memset(json_buffer, 0, 2048);
+    int read_len = esp_http_client_read_response(client_get, json_buffer, 2048);
+    
+    ESP_LOGI(TAG, "Bytes read from server: %d", read_len);
+    ESP_LOGI(TAG, "Raw response from server: %s", json_buffer);
+
+    esp_http_client_cleanup(client_get);
+
+    // --- PARSE JSON ---
+    cJSON *json = cJSON_Parse(json_buffer);
+    if (json == NULL) {
+        ESP_LOGE(TAG, "Failed to parse JSON string");
+        free(chunk_buffer);
+        free(json_buffer);
+        return;
+    }
+
+    cJSON *uploadUrlObj = cJSON_GetObjectItem(json, "uploadUrl");
+    if (!uploadUrlObj || !uploadUrlObj->valuestring) {
+        ESP_LOGE(TAG, "Failed to find uploadUrl in JSON");
+        cJSON_Delete(json);
+        free(chunk_buffer);
+        free(json_buffer);
+        return;
+    }
+
+    // --- 3. UPLOAD ALL PARTS AS ONE CONTINUOUS FILE ---
+    esp_http_client_config_t config_put = {
+        .url = uploadUrlObj->valuestring,
+        .method = HTTP_METHOD_PUT,
+        .timeout_ms = 60000, 
+        .crt_bundle_attach = esp_crt_bundle_attach,
+        .buffer_size = 2048,      // Increase RX buffer just in case
+        .buffer_size_tx = 4096,   // Massive TX buffer for the giant AWS URL!
+    };
+    esp_http_client_handle_t client_put = esp_http_client_init(&config_put);
+    esp_http_client_set_header(client_put, "Content-Type", "application/octet-stream");
+
+    // Open the connection with the TOTAL size
+    if (esp_http_client_open(client_put, total_size) == ESP_OK) {
+        
+        // Loop through the files again and push them into the open connection
+        for (int i = 0; i <= max_index; i += 50) {
+            char file_path[256];
+            snprintf(file_path, sizeof(file_path), "%s/%s/%s_part_%d.bin", 
+                     MOUNT_POINT, folder_name, folder_name, i);
+            
+            FILE* f = fopen(file_path, "rb");
+            if (f) {
+                size_t read_bytes;
+                while ((read_bytes = fread(chunk_buffer, 1, 2048, f)) > 0) {
+                    esp_http_client_write(client_put, chunk_buffer, read_bytes);
+                }
+                fclose(f);
+                ESP_LOGI(TAG, "Streamed part %d...", i);
+            }
+            vTaskDelay(pdMS_TO_TICKS(10)); 
+        }
+        
+        // Finish the upload
+        esp_http_client_fetch_headers(client_put);
+        int status = esp_http_client_get_status_code(client_put);
+        
+        if (status == 200) {
+            ESP_LOGI(TAG, "S3 Upload SUCCESS! Entire session merged.");
+        } else {
+            ESP_LOGE(TAG, "S3 Upload FAILED. HTTP Status: %d", status);
+        }
+    } else {
+        ESP_LOGE(TAG, "Failed to open PUT connection to S3");
+    }
+
+    esp_http_client_cleanup(client_put);
+    cJSON_Delete(json);
+    free(chunk_buffer);
+    free(json_buffer);
+    
+    ESP_LOGI(TAG, "Total upload routine finished!");
 }

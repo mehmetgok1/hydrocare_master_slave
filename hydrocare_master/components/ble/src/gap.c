@@ -282,7 +282,7 @@ void getDynamicName(char *dest_buf, size_t buf_len) {
     snprintf(dest_buf, buf_len, "Urinfo_%02X%02X%02X%02X%02X%02X", 
              mac[0], mac[1], mac[2], mac[3], mac[4], mac[5]);
 }
-
+static char device_name[40]; 
 int gap_init(void) {
     /* Local variables */
     int rc = 0;
@@ -291,7 +291,6 @@ int gap_init(void) {
     ble_svc_gap_init();
 
     /* Set GAP device name */
-    static char device_name[40]; 
     getDynamicName(device_name, sizeof(device_name));
     rc = ble_svc_gap_device_name_set(device_name);
     if (rc != 0) {
@@ -308,4 +307,7 @@ uint16_t* get_connection_handle(void) {
 
 bool* get_deviceConnected(void) {
     return &deviceConnected;
+}
+char* get_device_name(void) {
+    return device_name;
 }

@@ -21,4 +21,5 @@ void adv_init(void);
 int gap_init(void);
 uint16_t* get_connection_handle(void);
 bool* get_deviceConnected(void);
+char* get_device_name(void);
 #endif // GAP_SVC_H

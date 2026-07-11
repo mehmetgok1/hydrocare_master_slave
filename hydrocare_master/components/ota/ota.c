@@ -44,7 +44,11 @@ void wifi_init_sta(char* ssid, char* password) {
     wifi_config_t wifi_config = {0};
     strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid) - 1);
     strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password) - 1);
-    
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+
+    // Disable PMF for better compatibility with some routers.
+    // A disconnect reason of 204 (ASSOC_LEAVE) can sometimes be caused by PMF negotiation issues.
+    wifi_config.sta.pmf_cfg.capable = false;
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());

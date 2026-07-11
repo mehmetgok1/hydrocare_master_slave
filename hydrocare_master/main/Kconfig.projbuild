@@ -1,0 +1,15 @@
+menu "AWS Configuration"
+
+    config AWS_API_GATEWAY_URL
+        string "API Gateway URL"
+        default "https://your-api-id.execute-api.eu-north-1.amazonaws.com/upload-url"
+        help
+            Enter your full AWS API Gateway URL here.
+
+    config AWS_API_KEY
+        string "AWS API Key"
+        default "ENTER_YOUR_KEY_HERE"
+        help
+            Enter your secret x-api-key here.
+
+endmenu
