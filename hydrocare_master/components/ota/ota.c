@@ -26,6 +26,34 @@ static void event_handler(void* arg, esp_event_base_t event_base, int32_t event_
 
 // --- WiFi Initialization ---
 void wifi_init_sta(char* ssid, char* password) {
+    static bool is_initialized = false; 
+
+    // 1. Prepare the config (we need this whether it's the first time or the 10th time)
+    wifi_config_t wifi_config = {0};
+    strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid) - 1);
+    strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password) - 1);
+    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
+    wifi_config.sta.pmf_cfg.capable = false;
+
+    // 2. If already initialized, just update credentials and reconnect!
+    if (is_initialized) {
+        ESP_LOGI(TAG, "Wi-Fi stack already running. Updating credentials for: %s", ssid);
+        
+        // Disconnect from the current network first
+        esp_wifi_disconnect(); 
+        
+        // Push the new SSID and Password to the driver
+        ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
+        
+        // Connect to the new network
+        esp_wifi_connect();
+        
+        // Wait for the connection to establish
+        xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
+        return; 
+    }
+
+    // 3. --- First time setup only (Run once per boot!) ---
     s_wifi_event_group = xEventGroupCreate();
     ESP_ERROR_CHECK(esp_netif_init());
     ESP_ERROR_CHECK(esp_event_loop_create_default());
@@ -39,17 +67,12 @@ void wifi_init_sta(char* ssid, char* password) {
     ESP_ERROR_CHECK(esp_event_handler_instance_register(WIFI_EVENT, ESP_EVENT_ANY_ID, &event_handler, NULL, &instance_any_id));
     ESP_ERROR_CHECK(esp_event_handler_instance_register(IP_EVENT, IP_EVENT_STA_GOT_IP, &event_handler, NULL, &instance_got_ip));
 
-    wifi_config_t wifi_config = {0};
-    strncpy((char *)wifi_config.sta.ssid, ssid, sizeof(wifi_config.sta.ssid) - 1);
-    strncpy((char *)wifi_config.sta.password, password, sizeof(wifi_config.sta.password) - 1);
-    wifi_config.sta.threshold.authmode = WIFI_AUTH_WPA2_PSK;
-
-    // Disable PMF for better compatibility with some routers.
-    // A disconnect reason of 204 (ASSOC_LEAVE) can sometimes be caused by PMF negotiation issues.
-    wifi_config.sta.pmf_cfg.capable = false;
     ESP_ERROR_CHECK(esp_wifi_set_mode(WIFI_MODE_STA));
     ESP_ERROR_CHECK(esp_wifi_set_config(WIFI_IF_STA, &wifi_config));
     ESP_ERROR_CHECK(esp_wifi_start());
+
+    // Mark as initialized so we never run the deep system setup above again
+    is_initialized = true; 
 
     ESP_LOGI(TAG, "Waiting for WiFi connection...");
     xEventGroupWaitBits(s_wifi_event_group, WIFI_CONNECTED_BIT | WIFI_FAIL_BIT, pdFALSE, pdFALSE, portMAX_DELAY);
