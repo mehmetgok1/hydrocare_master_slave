@@ -1,7 +1,5 @@
 #include "ota.h"
 
-// --- Configuration ---
-#define FIRMWARE_VER   "v1.0.1" // Example version
 
 static const char *TAG = "OTA_UPDATER";
 
