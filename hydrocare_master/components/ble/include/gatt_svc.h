@@ -12,7 +12,7 @@
 #include "services/gatt/ble_svc_gatt.h"
 #include <time.h>
 #include <sys/time.h>
-
+#include "config.h"
 /* NimBLE GAP APIs */
 #include "host/ble_gap.h"
 

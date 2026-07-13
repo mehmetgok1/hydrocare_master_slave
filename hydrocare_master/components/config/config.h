@@ -13,6 +13,9 @@
 #include "freertos/task.h"
 #include "driver/uart.h"
 
+
+#define fw_version  "0.0.21"
+
 //external function declarations
 void initPeripherals();
 led_strip_handle_t get_led_strip_handle(void);

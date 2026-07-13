@@ -16,6 +16,7 @@ uint16_t mmwave_val_handle;
 uint16_t amb_int_val_handle;
 uint16_t rgb_val_handle;
 uint16_t ir_val_handle;
+uint16_t ver_val_handle;
 
 /* credentials */
 char* ssid;
@@ -76,7 +77,9 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
      .characteristics =
          (struct ble_gatt_chr_def[]){
              {.uuid = &gatt_version_uuid.u,
-              .access_cb = gatt_svr_chr_access, .flags = BLE_GATT_CHR_F_READ},
+              .access_cb = gatt_svr_chr_access, 
+              .flags = BLE_GATT_CHR_F_READ,
+              .val_handle = &ver_val_handle},
              {.uuid = &gatt_bat_uuid.u,
               .access_cb = gatt_svr_chr_access,
               .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
@@ -272,12 +275,24 @@ static void handle_action_write(struct os_mbuf *om) {
 /* Private functions */
 static int gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
                                struct ble_gatt_access_ctxt *ctxt, void *arg) {
+    
+    int rc = 0;
     switch (ctxt->op) {
     case BLE_GATT_ACCESS_OP_READ_CHR:
-        ESP_LOGI(TAG, "Characteristic read; conn_handle=%d, attr_handle=%d",
-                 conn_handle, attr_handle);
-        // Note: Implement os_mbuf_append logic here if you want BLE clients 
-        // to receive data when they manually read a characteristic.
+        if (conn_handle != BLE_HS_CONN_HANDLE_NONE) {
+            ESP_LOGI(TAG, "characteristic read; conn_handle=%d attr_handle=%d",
+                     conn_handle, attr_handle);
+        } else {
+            ESP_LOGI(TAG, "characteristic read by nimble stack; attr_handle=%d",
+                     attr_handle);
+        }
+        /* Verify attribute handle */
+        if (attr_handle == ver_val_handle) {
+            /* Update access buffer value */
+            rc = os_mbuf_append(ctxt->om, fw_version,
+                                sizeof(fw_version)-1);
+            return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+        }
         return 0;
     case BLE_GATT_ACCESS_OP_WRITE_CHR:
         ESP_LOGI(TAG, "Characteristic write; conn_handle=%d, attr_handle=%d",
