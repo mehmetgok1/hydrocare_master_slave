@@ -63,16 +63,17 @@ void perform_ota_update(const char* version) {
     
     // Construct the URL safely replacing Arduino String manipulation
     snprintf(firmware_url, sizeof(firmware_url), 
-             "https://github.com/onuryusufcinar/urinfo/releases/download/%s/firmware.bin", version);
+             "https://github.com/mehmetgok1/hydrocare_master_slave/releases/download/%s/firmware.bin", version);
+             
              
     ESP_LOGI(TAG, "Firmware URL: %s", firmware_url);
 
     esp_http_client_config_t http_config = {
         .url = firmware_url,
-        // esp_crt_bundle_attach uses ESP-IDF's global root certificates. 
-        // This makes your GitHub/AWS connection actually SECURE without needing to paste a raw certificate.
+        .buffer_size = 8192,                   // Increased from 4096 to handle GitHub/AWS headers
+        .buffer_size_tx = 2048,                // Good practice for secure connections
         .crt_bundle_attach = esp_crt_bundle_attach, 
-        .keep_alive_enable = true, // Highly recommended for GitHub redirects to AWS S3
+        .keep_alive_enable = true, 
         .timeout_ms = 10000,
     };
 

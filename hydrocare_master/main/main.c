@@ -1,8 +1,10 @@
 #include "ble.h"
 #include "esp_log.h"
 #include "freertos/idf_additions.h"
+#include "freertos/projdefs.h"
 #include "gatt_svc.h"
 #include <inttypes.h> // Include for portable format specifiers like PRIu32
+#include <stdint.h>
 
 const char *TAG2 = "MAIN";
 bool debug_infos = false; // Set to true to enable detailed debug prints*/
@@ -46,6 +48,9 @@ uint16_t master_staticDist = 0;
 uint8_t  master_staticEnergy = 0;
 uint16_t master_detectionDist = 0;
 
+uint8_t red = 0;
+uint8_t green = 0;
+uint8_t blue = 0;
 
 void app_main(void) {
   // Suppress informational logs from the NimBLE stack to clean up the console
@@ -213,10 +218,14 @@ void sdCardLoggingTask(void *parameter) {
 void loop() {
   
   //checkUSB();
-  if (get_otaUpdateAvailable()) {
-    uiOTAStarted(NULL,NULL,NULL);
+  if (*get_otaUpdateAvailable()) {
+    deallocateSPIBuffer();
+    vTaskDelay(pdMS_TO_TICKS(100));
+    uiOTAStarted(&red, &green, &blue);
     wifi_init_sta(get_ssid(), get_password());
+    vTaskDelay(pdMS_TO_TICKS(100));
     perform_ota_update(get_ver());
+    *get_otaUpdateAvailable() = false;  // Reset the flag after OTA
   }
   if(*get_wifi_connect()) {
     wifi_init_sta(get_ssid(), get_password());;

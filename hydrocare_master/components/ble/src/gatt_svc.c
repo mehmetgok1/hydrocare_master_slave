@@ -436,8 +436,8 @@ char* get_sessionFolder(void) {
 bool get_deviceStatus(void) {
     return deviceStatus;
 }
-bool get_otaUpdateAvailable(void) {
-    return otaUpdateAvailable;
+bool* get_otaUpdateAvailable(void) {
+    return &otaUpdateAvailable;
 }
 bool get_sendRgbFlag(void) {
     return sendRgbFlag;
