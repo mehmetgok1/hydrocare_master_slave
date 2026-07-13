@@ -1,5 +1,7 @@
+#include "gatt_svc.h"
 #include "ble.h"
 #include "sd.h"
+#include <string.h>
 
 /* Private function declarations */
 static int gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
@@ -17,7 +19,7 @@ uint16_t amb_int_val_handle;
 uint16_t rgb_val_handle;
 uint16_t ir_val_handle;
 uint16_t ver_val_handle;
-
+uint16_t wifistream_val_handle;
 /* credentials */
 char* ssid;
 char* password;
@@ -57,6 +59,9 @@ static const ble_uuid128_t gatt_action_uuid =
                      0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11);
 static const ble_uuid128_t gatt_version_uuid =
     BLE_UUID128_INIT(0x17, 0x11, 0x11, 0x11, 0x11, 0x11, 0x22, 0x22,
+                     0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11);
+static const ble_uuid128_t gatt_wifistream_uuid =
+    BLE_UUID128_INIT(0x19, 0x11, 0x11, 0x11, 0x11, 0x11, 0x22, 0x22,
                      0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11, 0x11);
 static const ble_uuid128_t gatt_amb_int_uuid =
     BLE_UUID128_INIT(0x18, 0x11, 0x11, 0x11, 0x11, 0x11, 0x22, 0x22,
@@ -111,7 +116,11 @@ static const struct ble_gatt_svc_def gatt_svr_svcs[] = {
               .access_cb = gatt_svr_chr_access,
               .flags = BLE_GATT_CHR_F_READ | BLE_GATT_CHR_F_NOTIFY,
               .val_handle = &ir_val_handle},
-             {0} /* No more characteristics in this service */
+             {.uuid = &gatt_wifistream_uuid.u,
+              .access_cb = gatt_svr_chr_access,
+              .flags = BLE_GATT_CHR_F_READ ,
+              .val_handle = &wifistream_val_handle},
+              {0} /* No more characteristics in this service */
          }
     },
     {0} /* No more services in this table */
@@ -190,8 +199,10 @@ static void handle_action_write(struct os_mbuf *om) {
     } else if (strncmp(command, "Com;Stop", 8) == 0) {
         deviceStatus = false;
         sessionInitialized = false;
-        ESP_LOGI(TAG, "[SD] Stop Logging. files will be transmitted over TCP socket.");
+        ESP_LOGI(TAG, "[SD] Stop Logging.");
+    }else if(strncmp(command, "Com;Stream", 10) == 0){
         stream_wifi = true;
+        ESP_LOGI(TAG, "[Wifi] files will be transmitted over TCP socket..");
     } else if (strncmp(command, "Com;WiFi", 8) == 0) {
         char *p1 = strchr(command, ';');
         if (p1) {
@@ -291,6 +302,11 @@ static int gatt_svr_chr_access(uint16_t conn_handle, uint16_t attr_handle,
             /* Update access buffer value */
             rc = os_mbuf_append(ctxt->om, fw_version,
                                 sizeof(fw_version)-1);
+            return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
+        }else if (attr_handle == wifistream_val_handle) {
+            /* Update access buffer value */
+            uint8_t bool_val = stream_wifi ? 1 : 0;
+            rc = os_mbuf_append(ctxt->om, &bool_val, sizeof(bool_val));
             return rc == 0 ? 0 : BLE_ATT_ERR_INSUFFICIENT_RES;
         }
         return 0;
