@@ -4,7 +4,7 @@
 
 const char *TAG = "wifi_stream";
 
-void stream_folder_to_tcp(const char* folder_name, char* server_ip) {
+void stream_folder_to_tcp(const char* folder_name) {
     esp_netif_t *netif = esp_netif_get_handle_from_ifkey("WIFI_STA_DEF");
     if (!netif || !esp_netif_is_netif_up(netif)){
         ESP_LOGI(TAG, "Wi-Fi is not connected or has no IP! Aborting S3 upload.");

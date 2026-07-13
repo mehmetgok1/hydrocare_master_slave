@@ -12,5 +12,5 @@
 // Define your AWS details here
 #define API_GATEWAY_URL CONFIG_AWS_API_GATEWAY_URL
 #define API_KEY CONFIG_AWS_API_KEY
-void stream_folder_to_tcp(const char* folder_name,char* server_ip);
+void stream_folder_to_tcp(const char* folder_name);
 #endif

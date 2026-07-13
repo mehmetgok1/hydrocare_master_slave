@@ -24,7 +24,6 @@ uint16_t wifistream_val_handle;
 char* ssid;
 char* password;
 char* ver;
-char* server_ip;
 char sessionFolder[64] = "session_default";
 // --- Globals ---
 bool deviceStatus = false; // false = stopped, true = logging
@@ -210,16 +209,11 @@ static void handle_action_write(struct os_mbuf *om) {
             if (p2) {
                 char *p3 = strchr(p2 + 1, ';');
                 if (p3) {
-                    char *p4 = strchr(p3 + 1, ';');
-                    if (p4) {
-                        strncpy(ssid, p2 + 1, p3 - (p2 + 1));
-                        ssid[p3 - (p2 + 1)] = '\0';
-                        strncpy(password, p3 + 1, p4 - (p3 + 1));
-                        password[p4 - (p3 + 1)] = '\0';
-                        strcpy(server_ip, p4 + 1);
-                        ESP_LOGI(TAG, "[BLE] WiFi Config updated: %s, Server: %s:8080", ssid, server_ip);
-                        wifi_connect = true;
-                    }
+                    strncpy(ssid, p2 + 1, p3 - (p2 + 1));
+                    ssid[p3 - (p2 + 1)] = '\0';
+                    strcpy(password, p3 + 1);
+                    ESP_LOGI(TAG, "[BLE] WiFi Config updated: %s", ssid);
+                    wifi_connect = true;
                 }
             }
         }
@@ -401,13 +395,11 @@ int gatt_svc_init(void) {
     ssid = malloc(64);
     password = malloc(64);
     ver = malloc(32);
-    server_ip = malloc(16);
 
     // Initialize them to empty strings to prevent using uninitialized memory
     if (ssid) *ssid = '\0';
     if (password) *password = '\0';
     if (ver) *ver = '\0';
-    if (server_ip) *server_ip = '\0';
 
     return 0;
 }
@@ -442,9 +434,6 @@ char* get_password(void) {
 }
 char* get_ver(void) {
     return ver;
-}
-char* get_server_ip(void) {
-    return server_ip;
 }
 char* get_sessionFolder(void) {
     return sessionFolder;

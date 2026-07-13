@@ -262,7 +262,7 @@ void loop() {
     
     ESP_LOGI(TAG2, "[MAIN] Buffers fully freed. Starting Wi-Fi TCP stream.");
     deallocateSPIBuffer();
-    stream_folder_to_tcp(get_sessionFolder(),get_server_ip());
+    stream_folder_to_tcp(get_sessionFolder());
     *get_stream_wifi() = false;
   }
   if (get_deviceConnected() && timerStream == 1 && get_deviceStatus() == 1 && get_sessionInitialized()) {
