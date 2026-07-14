@@ -14,7 +14,7 @@
 #include "driver/uart.h"
 
 
-#define fw_version  "0.0.21"
+#define fw_version  "0.1.1"
 
 //external function declarations
 void initPeripherals();
