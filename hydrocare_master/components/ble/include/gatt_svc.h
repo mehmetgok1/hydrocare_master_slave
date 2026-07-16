@@ -36,6 +36,8 @@ char* get_password(void);
 char* get_ver(void);
 char* get_server_ip(void);
 char* get_sessionFolder(void);
+char* get_led_kelvin(void);
+char* get_led_brightness(void);
 bool get_deviceStatus(void);
 bool* get_otaUpdateAvailable(void);
 bool get_sendRgbFlag(void);

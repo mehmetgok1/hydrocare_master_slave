@@ -46,9 +46,28 @@ void stream_folder_to_tcp(const char* folder_name) {
     ESP_LOGI(TAG, "Total session size to upload: %zu bytes", total_size);
 
     // --- 2. GET THE PRESIGNED URL (JUST ONCE) ---
+    char kelvin[8] = "0";      // Default fallback
+    char brightness[8] = "0";  // Default fallback
+
+    // Find the positions of 'K' and "Br" in the folder name
+    const char *k_ptr = strchr(folder_name, 'K');
+    const char *br_ptr = strstr(folder_name, "Br");
+    if (k_ptr && br_ptr && (br_ptr > k_ptr)) {
+        int k_len = br_ptr - k_ptr - 1; // Length of the kelvin string
+        
+        // Extract Kelvin
+        if (k_len > 0 && k_len < sizeof(kelvin)) {
+            strncpy(kelvin, k_ptr + 1, k_len);
+            kelvin[k_len] = '\0'; // Ensure null-termination
+        }
+        
+        // Extract Brightness
+        strncpy(brightness, br_ptr + 2, sizeof(brightness) - 1);
+        brightness[sizeof(brightness) - 1] = '\0'; // Ensure null-termination
+    }
     char get_url[256];
-    snprintf(get_url, sizeof(get_url), "%s?deviceId=%s", API_GATEWAY_URL, get_device_name());
-    
+    snprintf(get_url, sizeof(get_url), "%s?deviceId=%s&kelvin=%s&brightness=%s", 
+             API_GATEWAY_URL, get_device_name(), kelvin, brightness);    
     esp_http_client_config_t config_get = {
         .url = get_url,
         .method = HTTP_METHOD_GET,

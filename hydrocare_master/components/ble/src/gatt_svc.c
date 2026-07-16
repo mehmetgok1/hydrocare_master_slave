@@ -25,6 +25,9 @@ char* ssid;
 char* password;
 char* ver;
 char sessionFolder[64] = "session_default";
+
+char* led_kelvin;
+char* led_brightness;
 // --- Globals ---
 bool deviceStatus = false; // false = stopped, true = logging
 bool otaUpdateAvailable = false;
@@ -166,6 +169,19 @@ static void handle_action_write(struct os_mbuf *om) {
             }
         }
     } else if (strncmp(command, "Com;Start", 9) == 0) {
+        char *p1 = strchr(command, ';');
+        if (p1) {
+            char *p2 = strchr(p1 + 1, ';');
+            if (p2) {
+                char *p3 = strchr(p2 + 1, ';');
+                if (p3) {
+                    strncpy(led_kelvin, p2 + 1, p3 - (p2 + 1));
+                    led_kelvin[p3 - (p2 + 1)] = '\0';
+                    strcpy(led_brightness, p3 + 1);
+                    ESP_LOGI(TAG, "LED Kelvin: %s, LED Brightness: %s", led_kelvin, led_brightness);
+                }
+            }
+        }
         deviceStatus = true;
         ESP_LOGI(TAG, "\n[BLE] Logging started - Creating new session folder...");
         time_t now;
@@ -174,15 +190,16 @@ static void handle_action_write(struct os_mbuf *om) {
         time(&now);
         // 2. Convert to local time
         localtime_r(&now, &timeinfo);
-        // Generate timestamp: YYYYMMDD_HHMMSS (İkinci koda benzetildi)
-        strftime(sessionFolder, sizeof(sessionFolder), "%Y%m%d_%H%M%S", &timeinfo);
+        // Generate timestamp: YYYYMMDD_HHMMSS 
+        char timestamp[32];
+        strftime(timestamp, sizeof(timestamp), "%Y%m%d_%H%M%S", &timeinfo);
         packetsLogged = 0;
         // Create the session directory on the SD card
+        snprintf(sessionFolder, sizeof(sessionFolder), "%sK%sBr%s", timestamp, led_kelvin, led_brightness);
         char session_dir_path[128];
         snprintf(session_dir_path, sizeof(session_dir_path), MOUNT_POINT"/%s", sessionFolder);
         ESP_LOGI(TAG, "Creating session folder: %s", session_dir_path);
         struct stat st = {0};
-        // Eğer klasör yoksa oluşturmayı dene
         if (stat(session_dir_path, &st) == -1) {
             int created = mkdir(session_dir_path, 0755); // 0755: owner r/w/x, others r/x   
             if (created == 0) {
@@ -395,11 +412,14 @@ int gatt_svc_init(void) {
     ssid = malloc(64);
     password = malloc(64);
     ver = malloc(32);
-
+    led_kelvin = malloc(16);
+    led_brightness = malloc(16);
     // Initialize them to empty strings to prevent using uninitialized memory
     if (ssid) *ssid = '\0';
     if (password) *password = '\0';
     if (ver) *ver = '\0';
+    if (led_kelvin) *led_kelvin = '\0';
+    if (led_brightness) *led_brightness = '\0';
 
     return 0;
 }
@@ -437,6 +457,12 @@ char* get_ver(void) {
 }
 char* get_sessionFolder(void) {
     return sessionFolder;
+}
+char* get_led_kelvin(void) {
+    return led_kelvin;
+}
+char* get_led_brightness(void) {
+    return led_brightness;
 }
 bool get_deviceStatus(void) {
     return deviceStatus;
