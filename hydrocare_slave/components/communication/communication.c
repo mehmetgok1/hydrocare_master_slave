@@ -337,9 +337,12 @@ static void continuous_adc_task(void *pvParameters)
                 esp_err_t parse_ret = adc_continuous_parse_data(*get_adc_cont_handle(), result, ret_num, parsed_result, &parsed_num);
                 if (parse_ret == ESP_OK) {
                   for (uint32_t i = 0; i < parsed_num; i+=2) { // We get 2 channels of data at a time
+                    if((i+1) >= parsed_num)
+                      break;
+
                     if (parsed_result[i].valid) {
-                      // Downsample: 20kHz -> 2kHz means we take 1 of every 10 samples
-                      if (decimation_count++ % 10 == 0) {                          
+                      // Downsample: 10kHz -> 2kHz means we take 1 of every 5 samples
+                      if (decimation_count++ % 5 == 0) {                          
                         // 1. Ambient Light (Keep it RAW here, it's faster!)
                         ambLight_result = parsed_result[i].raw_data;
                         // 2. Microphone (Scale it here so we don't stall the SPI task later)
