@@ -31,8 +31,9 @@
 #define STATUS_LOCKED 0x04          // Buffers locked and ready for bulk read
 
 // Constants
-#define SPI_BUFFER_SIZE 12288       // 12KB - handles ~12kB packet (400 samples) + header + margin
+#define SPI_BUFFER_SIZE 16384       // 16KB - handles ~16kB packet (400 samples) + header + margin
 #define RING_BUFFER_SIZE 1000       // 0.5 seconds of 2kHz data
+#define RING_BUFFER_SIZE_MIC 5000   // 0.5 seconds of 10kHz microphone data
 
 // ============ DATA STRUCTURES ============
 // Sensor data packet structure with high-speed samples (~16.6KB)
@@ -52,7 +53,7 @@ typedef struct __attribute__((packed)) {
   int16_t accelX_samples[400];    // 400 accel X samples @ 2kHz = 0.2 seconds
   int16_t accelY_samples[400];    // 400 accel Y samples @ 2kHz = 0.2 seconds
   int16_t accelZ_samples[400];    // 400 accel Z samples @ 2kHz = 0.2 seconds
-  uint16_t microphoneSamples[400];// 400 microphone samples @ 2kHz = 0.2 seconds
+  uint16_t microphoneSamples[2000];// 2000 microphone samples @ 10kHz = 0.2 seconds
 
   // Slow sensor frames (camera data)
   uint16_t rgbFrame[4096];        // RGB565 64x64 (8192 bytes)
