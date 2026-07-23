@@ -175,9 +175,9 @@ void initCamera()
   config.pin_reset = -1;
   config.xclk_freq_hz = 16000000;
   config.pixel_format = PIXFORMAT_RGB565;
-  config.frame_size = FRAMESIZE_96X96; // 320×240, we crop center 64×64
+  config.frame_size = FRAMESIZE_QQVGA; //we will crop center 64×64
   config.jpeg_quality = 12;
-  config.fb_count = 1;
+  config.fb_count = 2;
   config.fb_location = CAMERA_FB_IN_PSRAM;
   config.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
 
